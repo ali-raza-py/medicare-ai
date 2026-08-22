@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MediCare AI
 
-## Getting Started
+MediCare AI is a patient-focused medical-record intelligence dashboard for organizing and understanding uploaded documents, timeline data, and clinical evidence without providing diagnoses or prescriptions.
 
-First, run the development server:
+## Project goal
+
+The current demo focuses on the core MVP flow defined in the project context:
+
+- upload medical files and preserve source metadata
+- organize records into a proper chronology
+- answer patient questions using uploaded evidence only
+- show evidence snippets from source documents
+- compare report changes across time without turning the app into a diagnosis tool
+
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Current status
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The frontend now includes a working MediCare AI dashboard prototype with:
 
-## Learn More
+- record overview cards
+- document upload panel
+- medical timeline section
+- grounded Q&A assistant
+- source evidence display
+- report comparison panel
 
-To learn more about Next.js, take a look at the following resources:
+## Safety boundary
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+This project is intentionally limited to:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- summarizing uploaded records
+- identifying changes over time
+- grounding answers in records
+- helping users understand source material
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+It does not provide clinical diagnosis, emergency care advice, or treatment suggestions.

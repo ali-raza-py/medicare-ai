@@ -2,11 +2,9 @@
 
 ## Project Status
 
-Early foundation stage.
+The foundation work is complete. The repo has been initialized, the app shell has been converted from the default Next.js template into a MediCare AI dashboard, and the default Vercel starter branding has been removed from the project source.
 
-The GitHub repository has been created and cloned locally. At the moment, the repository contains only the initial `.gitignore`. Application code has not yet been implemented.
-
-This file is the source of truth for the current project state so coding agents such as Qoder can understand the project without repeatedly reconstructing the context.
+This file is the current source of truth for the repository state and the hackathon implementation direction.
 
 ---
 
@@ -42,7 +40,7 @@ The product should focus on useful, grounded medical-record understanding rather
 
 ## Target MVP
 
-The MVP should prioritize the P0 workflow:
+The MVP prioritizes the P0 workflow:
 
 ### 1. Document Upload
 
@@ -50,11 +48,11 @@ Users can upload supported medical documents such as PDFs and supported images.
 
 The system should:
 
-- Accept supported files.
-- Reject unsupported files clearly.
-- Store document metadata.
-- Process document text/content.
-- Preserve enough information to identify the original source.
+- accept supported files
+- reject unsupported files clearly
+- store document metadata
+- process document text/content
+- preserve enough information to identify the original source
 
 ### 2. Medical Timeline
 
@@ -86,6 +84,24 @@ The comparison must not present differences as a medical diagnosis.
 
 ---
 
+## Completed Work
+
+### Frontend prototype
+
+A working dashboard prototype has been built with the following sections:
+
+- document library and file upload interaction
+- medical timeline
+- Q&A panel with evidence-grounded responses
+- comparison cards for report changes
+- branded MediCare AI UI without Vercel starter content
+
+### Cleanup
+
+Default Vercel starter references, starter assets, and generated template metadata were removed from the repo source.
+
+---
+
 ## Planned Technology Stack
 
 ### Frontend
@@ -107,17 +123,31 @@ Do not hard-code an AI provider or model in this document unless it has actually
 
 ---
 
-## Planned Architecture
+## Current Architecture
 
 ```text
 medicare-ai/
-│
+├── app/
+│   ├── dashboard/
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── lib/
+├── types/
+├── public/
 ├── README.md
 ├── PROJECT_CONTEXT.md
+├── package.json
+├── tsconfig.json
+├── next.config.ts
+├── postcss.config.mjs
+├── eslint.config.mjs
 ├── .gitignore
-│
-├── frontend/
-│   └── Next.js + TypeScript + Tailwind
-│
-└── backend/
-    └── FastAPI
+└── .next/
+```
+
+---
+
+## Implementation Rule
+
+The product must remain evidence-grounded, privacy-conscious, and non-diagnostic. It should help users understand their medical records without replacing a clinician.
