@@ -21,16 +21,39 @@ npm run dev
 
 Then open http://localhost:3000.
 
+### Backend
+
+Install the Python dependencies and start FastAPI in a second terminal:
+
+```bash
+python -m pip install -r requirements.txt
+python -m uvicorn backend.app.main:app --reload --port 8000
+```
+
+The frontend uses `http://localhost:8000` by default. Set `NEXT_PUBLIC_API_BASE_URL` when the backend is hosted elsewhere. CORS origins can be configured with `CORS_ALLOWED_ORIGINS`.
+
 ## Current status
 
-The frontend now includes a working MediCare AI dashboard prototype with:
+The repository now includes a working frontend and a minimum FastAPI backend with:
 
 - record overview cards
-- document upload panel
+- PDF/image upload and processing endpoints
 - medical timeline section
-- grounded Q&A assistant
-- source evidence display
-- report comparison panel
+- evidence-scoped Q&A endpoint with source references
+- report comparison endpoint
+- configurable AI provider interface
+
+The current backend uses synthetic/de-identified extraction and a local token-overlap retrieval fallback. It does not yet provide OCR, embeddings, a vector database, or a live LLM provider.
+
+## Backend configuration
+
+Optional environment variables:
+
+- `MEDICARE_AI_PROVIDER` (defaults to `mock`)
+- `MEDICARE_AI_MODEL` (defaults to `mock-model`)
+- `MEDICARE_AI_API_KEY` (required by future non-mock providers; never sent to the browser)
+- `MEDICARE_UPLOAD_DIR` (defaults to `./.uploads`)
+- `CORS_ALLOWED_ORIGINS` (comma-separated frontend origins)
 
 ## Safety boundary
 

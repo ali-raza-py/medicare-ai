@@ -19,3 +19,55 @@ export interface PatientVitals {
   oxygenSaturation: number;
   updatedAt: string;
 }
+
+export interface MedicalDocumentRecord {
+  id: string;
+  title: string;
+  type: string;
+  date: string;
+  status?: 'Ready' | 'Needs review';
+  summary: string;
+  content?: string;
+}
+
+export interface MedicalEvidence {
+  documentName: string;
+  section: string;
+  sourceId: string;
+  snippet: string;
+  score: number;
+}
+
+export interface MedicalAnswerRequest {
+  question: string;
+  documents: MedicalDocumentRecord[];
+}
+
+export interface MedicalAnswerResponse {
+  answer: string;
+  evidence: MedicalEvidence[];
+  confidence: 'High' | 'Medium' | 'Low';
+  sourceCount: number;
+  provider?: string;
+  model?: string;
+}
+
+export interface MedicalComparisonRow {
+  field: string;
+  previousValue: string;
+  currentValue: string;
+  changeType: 'added' | 'removed' | 'updated' | 'unchanged';
+  detail: string;
+}
+
+export interface MedicalComparisonRequest {
+  leftReport: string;
+  rightReport: string;
+}
+
+export interface MedicalComparisonResponse {
+  summary: string;
+  changes: MedicalComparisonRow[];
+  provider?: string;
+  model?: string;
+}

@@ -1,8 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+
+import { createClient } from '@/lib/supabase/client';
 
 const featureList = [
   'Upload PDFs and scanned reports',
@@ -15,10 +16,68 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (event: FormEvent) => {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get('error');
+    if (authError) Promise.resolve().then(() => setError(authError.replaceAll('_', ' ')));
+  }, []);
+
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    router.push('/dashboard');
+    setError('');
+    setMessage('');
+
+    if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) {
+      setError('Enter a valid email address.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const supabase = createClient();
+      const result = mode === 'sign-in'
+        ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
+        : await supabase.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: `${window.location.origin}/auth/callback` } });
+
+      if (result.error) {
+        setError(result.error.message);
+      } else if (mode === 'sign-up' && !result.data.session) {
+        setMessage('Account created. Check your email to confirm your address before signing in.');
+      } else if (result.data.session) {
+        router.replace('/dashboard');
+      } else {
+        setError('Authentication did not create a session. Try again.');
+      }
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : 'Authentication is not configured.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setIsLoading(true);
+    try {
+      const supabase = createClient();
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (oauthError) setError(oauthError.message);
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : 'Google authentication is not configured.');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -69,7 +128,7 @@ export default function LoginPage() {
               <div className="mb-6 flex items-center justify-between">
                 <div>
                   <p className="text-sm uppercase tracking-[0.2em] text-slate-400">Welcome</p>
-                  <h2 className="mt-2 text-3xl font-bold text-white">Sign in</h2>
+                  <h2 className="mt-2 text-3xl font-bold text-white">{mode === 'sign-in' ? 'Sign in' : 'Create account'}</h2>
                 </div>
                 <div className="rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-xs font-medium text-teal-200">
                   Secure access
@@ -78,7 +137,8 @@ export default function LoginPage() {
 
               <button
                 type="button"
-                onClick={() => router.push('/dashboard')}
+                onClick={handleGoogleSignIn}
+                disabled={isLoading}
                 className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition duration-200 hover:bg-white/10"
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-base text-slate-900">G</span>
@@ -90,6 +150,9 @@ export default function LoginPage() {
                 or use email
                 <span className="h-px flex-1 bg-slate-700" />
               </div>
+
+              {error && <p role="alert" className="mb-4 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>}
+              {message && <p role="status" className="mb-4 rounded-xl border border-teal-400/30 bg-teal-500/10 p-3 text-sm text-teal-100">{message}</p>}
 
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div>
@@ -125,24 +188,26 @@ export default function LoginPage() {
                     <input type="checkbox" className="h-4 w-4 accent-teal-500" />
                     Remember me
                   </label>
-                  <Link href="/dashboard" className="text-teal-300 transition hover:text-teal-200">
-                    Forgot password?
-                  </Link>
+                  <span className="text-slate-500">Use your verified account email</span>
                 </div>
 
                 <button
                   type="submit"
                   className="w-full rounded-2xl bg-gradient-to-r from-teal-500 via-cyan-500 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition duration-200 hover:brightness-110"
                 >
-                  Sign in
+                  {isLoading ? 'Working...' : mode === 'sign-in' ? 'Sign in' : 'Create account'}
                 </button>
               </form>
 
               <p className="mt-6 text-center text-sm text-slate-400">
-                New here?{' '}
-                <Link href="/dashboard" className="font-semibold text-teal-300 transition hover:text-teal-200">
-                  Create an account
-                </Link>
+                {mode === 'sign-in' ? 'New here?' : 'Already have an account?'}{' '}
+                <button
+                  type="button"
+                  onClick={() => { setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in'); setError(''); setMessage(''); }}
+                  className="font-semibold text-teal-300 transition hover:text-teal-200"
+                >
+                  {mode === 'sign-in' ? 'Create an account' : 'Sign in'}
+                </button>
               </p>
             </div>
           </div>
