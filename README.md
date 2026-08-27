@@ -1,76 +1,36 @@
-# MediCare AI
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-MediCare AI is a patient-focused medical-record intelligence dashboard for organizing and understanding uploaded documents, timeline data, and clinical evidence without providing diagnoses or prescriptions.
+## Getting Started
 
-## Project goal
-
-The current demo focuses on the core MVP flow defined in the project context:
-
-- upload medical files and preserve source metadata
-- organize records into a proper chronology
-- answer patient questions using uploaded evidence only
-- show evidence snippets from source documents
-- compare report changes across time without turning the app into a diagnosis tool
-
-## Local development
+First, run the development server:
 
 ```bash
-npm install
 npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-Then open http://localhost:3000.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-### Temporary local admin login
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-For local demo access, use the following credentials while the project is being reviewed:
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-- Username / ID: `admin`
-- Password: `12345`
+## Learn More
 
-These credentials are for local development/demo use only and should be replaced with a real secure admin setup before production deployment.
+To learn more about Next.js, take a look at the following resources:
 
-### Backend
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-Install the Python dependencies and start FastAPI in a second terminal:
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-```bash
-python -m pip install -r requirements.txt
-python -m uvicorn backend.app.main:app --reload --port 8000
-```
+## Deploy on Vercel
 
-The frontend uses `http://localhost:8000` by default. Set `NEXT_PUBLIC_API_BASE_URL` when the backend is hosted elsewhere. CORS origins can be configured with `CORS_ALLOWED_ORIGINS`.
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-## Current status
-
-The repository now includes a working frontend and a minimum FastAPI backend with:
-
-- record overview cards
-- PDF/image upload and processing endpoints
-- medical timeline section
-- evidence-scoped Q&A endpoint with source references
-- report comparison endpoint
-- configurable AI provider interface
-
-The current backend uses synthetic/de-identified extraction and a local token-overlap retrieval fallback. It does not yet provide OCR, embeddings, a vector database, or a live LLM provider.
-
-## Backend configuration
-
-Optional environment variables:
-
-- `MEDICARE_AI_PROVIDER` (defaults to `mock`)
-- `MEDICARE_AI_MODEL` (defaults to `mock-model`)
-- `MEDICARE_AI_API_KEY` (required by future non-mock providers; never sent to the browser)
-- `MEDICARE_UPLOAD_DIR` (defaults to `./.uploads`)
-- `CORS_ALLOWED_ORIGINS` (comma-separated frontend origins)
-
-## Safety boundary
-
-This project is intentionally limited to:
-
-- summarizing uploaded records
-- identifying changes over time
-- grounding answers in records
-- helping users understand source material
-
-It does not provide clinical diagnosis, emergency care advice, or treatment suggestions.
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
