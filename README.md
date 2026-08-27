@@ -21,6 +21,15 @@ npm run dev
 
 Then open http://localhost:3000.
 
+### Temporary local admin login
+
+For local demo access, use the following credentials while the project is being reviewed:
+
+- Username / ID: `admin`
+- Password: `12345`
+
+These credentials are for local development/demo use only and should be replaced with a real secure admin setup before production deployment.
+
 ### Backend
 
 Install the Python dependencies and start FastAPI in a second terminal:

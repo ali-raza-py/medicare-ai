@@ -6,16 +6,17 @@ import { FormEvent, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 const featureList = [
-  'Upload PDFs and scanned reports',
-  'Chronological timeline of patient updates',
-  'Grounded answers from uploaded evidence',
-  'Safe comparison without diagnosis claims',
+  'AI-guided health summaries',
+  'Medical document organization',
+  'Trusted care insights',
+  'Clear personal health context',
 ];
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('admin');
+  const [password, setPassword] = useState('12345');
+  const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -32,12 +33,28 @@ export default function LoginPage() {
     setError('');
     setMessage('');
 
-    if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) {
-      setError('Enter a valid email address.');
+    if (!email.trim()) {
+      setError('Please enter your admin ID.');
       return;
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+    if (!password.trim()) {
+      setError('Password is required.');
+      return;
+    }
+    if (mode === 'sign-in' && password.length < 5) {
+      setError('Password must be at least 5 characters.');
+      return;
+    }
+
+    const demoAdminId = process.env.NEXT_PUBLIC_DEMO_ADMIN_ID ?? 'admin';
+    const demoAdminPassword = process.env.NEXT_PUBLIC_DEMO_ADMIN_PASSWORD ?? '12345';
+
+    if (mode === 'sign-in' && email.trim() === demoAdminId && password === demoAdminPassword) {
+      setIsLoading(true);
+      setMessage('Demo mode active. Redirecting to dashboard...');
+      window.setTimeout(() => {
+        router.replace('/dashboard');
+      }, 300);
       return;
     }
 
@@ -51,11 +68,11 @@ export default function LoginPage() {
       if (result.error) {
         setError(result.error.message);
       } else if (mode === 'sign-up' && !result.data.session) {
-        setMessage('Account created. Check your email to confirm your address before signing in.');
+        setMessage('Account created. Check your inbox to confirm your email before signing in.');
       } else if (result.data.session) {
         router.replace('/dashboard');
       } else {
-        setError('Authentication did not create a session. Try again.');
+        setError('Authentication did not create a session. Please try again.');
       }
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : 'Authentication is not configured.');
@@ -80,135 +97,197 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPassword = () => {
+    setError('Password reset is handled through your authentication provider.');
+  };
+
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(45,212,191,0.22),transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(59,130,246,0.18),transparent_25%)]" />
-      <div className="absolute -left-20 top-16 h-72 w-72 rounded-full bg-teal-500/20 blur-3xl animate-pulse" />
-      <div className="absolute bottom-8 right-10 h-80 w-80 rounded-full bg-cyan-500/20 blur-3xl animate-pulse" style={{ animationDelay: '800ms' }} />
+    <div className="min-h-screen bg-[#edf5f3] text-[#0f172a]">
+      <div className="mx-auto flex min-h-screen max-w-[1500px] items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
+        <div className="grid w-full max-w-[1280px] overflow-hidden rounded-[32px] border border-[#d8e7e2] bg-[#f8fbfa] shadow-[0_28px_80px_rgba(17,47,46,0.08)] lg:grid-cols-[0.95fr_1.05fr]">
+          <div className="relative overflow-hidden border-b border-[#dce9e5] bg-[linear-gradient(135deg,_#eefaf6_0%,_#edf5f3_45%,_#f5faf9_100%)] p-8 sm:p-10 lg:border-b-0 lg:border-r">
+            <div className="absolute -left-16 top-12 h-44 w-44 rounded-full bg-[#dff7f1] blur-3xl" />
+            <div className="absolute right-8 top-14 h-52 w-52 rounded-full bg-[#d4efe9] blur-3xl" />
+            <div className="absolute bottom-6 left-12 h-40 w-40 rounded-full bg-[#ebf9f6] blur-3xl" />
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl items-center px-4 py-10 sm:px-6 lg:px-8">
-        <div className="grid w-full gap-8 rounded-[32px] border border-white/10 bg-white/5 p-4 shadow-[0_35px_90px_rgba(15,23,42,0.7)] backdrop-blur-xl lg:grid-cols-[1.1fr_0.9fr] lg:p-8">
-          <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-slate-900/70 p-8">
-            <div className="absolute right-8 top-8 h-32 w-32 rounded-full border border-teal-400/30 bg-teal-500/10 blur-2xl" />
-            <div className="absolute bottom-10 left-10 h-28 w-28 rounded-full border border-cyan-400/20 bg-cyan-500/10 blur-2xl" />
+            <div className="relative z-10 flex h-full flex-col justify-between">
+              <div>
+                <div className="mb-8 flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#12a399] to-[#0f7d99] text-lg text-white shadow-[0_10px_24px_rgba(20,157,148,0.25)]">
+                    ✚
+                  </div>
+                  <span className="text-[2rem] font-black tracking-[-0.08em] text-[#0d1d29]">Medicare</span>
+                </div>
 
-            <div className="relative">
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-teal-400/30 bg-teal-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-teal-200">
-                <span className="h-2 w-2 rounded-full bg-teal-400" />
-                MediCare AI
+                <div className="mb-8 inline-flex items-center gap-3 rounded-full border border-[#cfe5df] bg-[#ebf9f5] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#0c7f74]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#f8fcfb] text-[10px] text-[#0d8b82]">✦</span>
+                  Smart healthcare access
+                </div>
+
+                <h1 className="max-w-[420px] text-[3rem] font-black leading-[0.9] tracking-[-0.08em] text-[#0f172a] sm:text-[4rem]">
+                  Smarter healthcare
+                  <span className="block text-[#0ea79d]">starts here.</span>
+                </h1>
+
+                <p className="mt-5 max-w-[430px] text-lg leading-8 text-[#536b7a]">
+                  Access your personalized healthcare workspace and AI-powered tools in one place.
+                </p>
               </div>
 
-              <h1 className="max-w-xl text-4xl font-black leading-tight tracking-tight text-white sm:text-5xl">
-                Turn scattered records into a clear care story.
-              </h1>
+              <div className="relative mt-10 max-w-[430px] rounded-[28px] border border-[#d8e7e2] bg-white/65 p-5 shadow-[0_18px_30px_rgba(148,163,184,0.08)] backdrop-blur-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#2f5867]">Your health space</div>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#dcfaf4] text-lg text-[#0f8b82]">✓</div>
+                </div>
 
-              <p className="mt-5 max-w-lg text-base text-slate-300">
-                Organize patient files, compare document changes, and ask grounded questions without guessing or diagnosing.
-              </p>
-
-              <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                {featureList.map((item, index) => (
-                  <div
-                    key={item}
-                    className="rounded-2xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:-translate-y-1 hover:border-teal-400/40 hover:bg-slate-800/80"
-                    style={{ animationDelay: `${index * 120}ms` }}
-                  >
-                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-cyan-500 text-lg font-bold text-slate-950 shadow-lg shadow-teal-500/20">
-                      {index + 1}
+                <div className="space-y-3 text-sm text-[#39576a]">
+                  {[
+                    'Health information organized',
+                    'Medical resources and summaries',
+                    'AI assistance for better clarity',
+                  ].map((item) => (
+                    <div key={item} className="flex items-center gap-3">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#e9faf6] text-[#0b8b80]">✓</span>
+                      <span>{item}</span>
                     </div>
-                    <p className="text-sm text-slate-200">{item}</p>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-center rounded-[28px] border border-white/10 bg-slate-950/70 p-6 sm:p-8">
-            <div className="w-full max-w-md">
-              <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-slate-400">Welcome</p>
-                  <h2 className="mt-2 text-3xl font-bold text-white">{mode === 'sign-in' ? 'Sign in' : 'Create account'}</h2>
-                </div>
-                <div className="rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-xs font-medium text-teal-200">
-                  Secure access
-                </div>
+          <div className="flex items-center justify-center bg-[#f8fbfa] p-6 sm:p-8 lg:p-10">
+            <div className="w-full max-w-[470px]">
+              <div className="mb-8">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#0c7f74]">Welcome back</p>
+                <h2 className="mt-3 text-4xl font-black tracking-[-0.07em] text-[#0f172a]">
+                  {mode === 'sign-in' ? 'Sign in to your Medicare account' : 'Create your Medicare account'}
+                </h2>
+                <p className="mt-3 text-base text-[#536b7a]">
+                  {mode === 'sign-in'
+                    ? 'Continue to your personalized healthcare experience.'
+                    : 'Set up a secure profile to organize your health information.'}
+                </p>
               </div>
 
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={isLoading}
-                className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition duration-200 hover:bg-white/10"
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-base text-slate-900">G</span>
-                Continue with Google
-              </button>
+              {error && (
+                <div role="alert" className="mb-5 rounded-2xl border border-[#f0c9c9] bg-[#fff3f3] px-4 py-3 text-sm text-[#9a2d2d]">
+                  {error}
+                </div>
+              )}
+              {!process.env.NEXT_PUBLIC_SUPABASE_URL && (
+                <div className="mb-5 rounded-2xl border border-[#dfeae7] bg-[#eefaf7] px-4 py-3 text-sm text-[#0b6b65]">
+                  Demo mode is active locally. Use the saved admin preview credentials.
+                </div>
+              )}
+              {message && (
+                <div role="status" className="mb-5 rounded-2xl border border-[#cfe9e2] bg-[#edfaf6] px-4 py-3 text-sm text-[#0a6b62]">
+                  {message}
+                </div>
+              )}
 
-              <div className="my-5 flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-slate-500">
-                <span className="h-px flex-1 bg-slate-700" />
-                or use email
-                <span className="h-px flex-1 bg-slate-700" />
+              <div className="mb-6">
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoading}
+                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-[#dfeae7] bg-white px-4 py-3.5 text-sm font-semibold text-[#1e2e3b] shadow-[0_10px_18px_rgba(148,163,184,0.06)] transition hover:-translate-y-0.5 hover:border-[#cfe5df] hover:bg-[#f7faf9] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f2f7f6] text-sm font-bold text-[#1e2e3b]">G</span>
+                  Continue with Google
+                </button>
               </div>
 
-              {error && <p role="alert" className="mb-4 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>}
-              {message && <p role="status" className="mb-4 rounded-xl border border-teal-400/30 bg-teal-500/10 p-3 text-sm text-teal-100">{message}</p>}
+              <div className="mb-6 flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.22em] text-[#73879a]">
+                <span className="h-px flex-1 bg-[#dfeae7]" />
+                Or continue with secure access
+                <span className="h-px flex-1 bg-[#dfeae7]" />
+              </div>
 
-              <form className="space-y-4" onSubmit={handleSubmit}>
+              <form className="space-y-5" onSubmit={handleSubmit} noValidate>
                 <div>
-                  <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-300">
-                    Email address
+                  <label htmlFor="email" className="mb-2 block text-sm font-semibold text-[#2a3d4d]">
+                    Admin ID
                   </label>
                   <input
                     id="email"
-                    type="email"
+                    name="email"
+                    type="text"
+                    autoComplete="username"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder="you@example.com"
-                    className="w-full rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30"
+                    placeholder="Enter your admin ID"
+                    className="w-full rounded-2xl border border-[#dfeae7] bg-white px-4 py-3.5 text-base text-[#10222d] placeholder:text-[#7b8e9f] outline-none transition focus:border-[#0ea79d] focus:ring-4 focus:ring-[#dff7f2]"
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-300">
+                  <label htmlFor="password" className="mb-2 block text-sm font-semibold text-[#2a3d4d]">
                     Password
                   </label>
-                  <input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="Enter your password"
-                    className="w-full rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30"
-                  />
+                  <div className="relative">
+                    <input
+                      id="password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="Enter your password"
+                      className="w-full rounded-2xl border border-[#dfeae7] bg-white px-4 py-3.5 pr-12 text-base text-[#10222d] placeholder:text-[#7b8e9f] outline-none transition focus:border-[#0ea79d] focus:ring-4 focus:ring-[#dff7f2]"
+                    />
+                    <button
+                      type="button"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowPassword((value) => !value)}
+                      className="absolute inset-y-0 right-3 flex items-center text-lg text-[#57708b] transition hover:text-[#0b7d74]"
+                    >
+                      {showPassword ? '🙈' : '👁'}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between text-sm text-slate-400">
-                  <label className="inline-flex items-center gap-2">
-                    <input type="checkbox" className="h-4 w-4 accent-teal-500" />
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <label className="inline-flex items-center gap-2 text-[#536b7a]">
+                    <input type="checkbox" className="h-4 w-4 accent-[#0ea79d]" />
                     Remember me
                   </label>
-                  <span className="text-slate-500">Use your verified account email</span>
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="font-semibold text-[#0a7d74] transition hover:text-[#0b655e]"
+                  >
+                    Forgot password?
+                  </button>
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full rounded-2xl bg-gradient-to-r from-teal-500 via-cyan-500 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition duration-200 hover:brightness-110"
+                  disabled={isLoading}
+                  className="w-full rounded-2xl bg-gradient-to-r from-[#0ea79d] to-[#0c7fa2] px-4 py-3.5 text-base font-bold text-white shadow-[0_14px_28px_rgba(16,158,148,0.22)] transition hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-80"
                 >
-                  {isLoading ? 'Working...' : mode === 'sign-in' ? 'Sign in' : 'Create account'}
+                  {isLoading ? (mode === 'sign-in' ? 'Signing in...' : 'Creating account...') : 'Sign In →'}
                 </button>
               </form>
 
-              <p className="mt-6 text-center text-sm text-slate-400">
-                {mode === 'sign-in' ? 'New here?' : 'Already have an account?'}{' '}
+              <p className="mt-7 text-center text-sm text-[#536b7a]">
+                {mode === 'sign-in' ? "Don't have an account?" : 'Already have an account?'}{' '}
                 <button
                   type="button"
-                  onClick={() => { setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in'); setError(''); setMessage(''); }}
-                  className="font-semibold text-teal-300 transition hover:text-teal-200"
+                  onClick={() => {
+                    setMode((current) => (current === 'sign-in' ? 'sign-up' : 'sign-in'));
+                    setError('');
+                    setMessage('');
+                  }}
+                  className="font-bold text-[#0a7d74] transition hover:text-[#0b655e]"
                 >
-                  {mode === 'sign-in' ? 'Create an account' : 'Sign in'}
+                  {mode === 'sign-in' ? 'Create one' : 'Sign in'}
                 </button>
               </p>
+
+              <div className="mt-8 rounded-2xl border border-[#dfeae7] bg-[#f5faf8] px-4 py-3 text-center text-sm text-[#50687c]">
+                Your health information is managed within your secure care workspace.
+              </div>
             </div>
           </div>
         </div>
