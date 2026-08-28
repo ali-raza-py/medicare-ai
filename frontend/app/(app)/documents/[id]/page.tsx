@@ -1,0 +1,205 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import {
+  ArrowLeft,
+  ArrowLeftRight,
+  CalendarDays,
+  Sparkles,
+} from "lucide-react";
+import { DEMO_DOCUMENTS, DEMO_DOCUMENT_DETAILS } from "@/lib/demo-data";
+import {
+  FLAG_LABELS,
+  FLAG_STYLES,
+  KIND_ICONS,
+  KIND_LABELS,
+} from "@/lib/document-constants";
+
+export default async function DocumentDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const doc = DEMO_DOCUMENTS.find((d) => d.id === id);
+  if (!doc) notFound();
+
+  const detail = DEMO_DOCUMENT_DETAILS[doc.id];
+  const KindIcon = KIND_ICONS[doc.kind];
+
+  const gradientClass = {
+    lab: "from-blue-500/10 to-cyan-500/10",
+    imaging: "from-purple-500/10 to-pink-500/10",
+    report: "from-emerald-500/10 to-teal-500/10",
+  }[doc.kind];
+
+  return (
+    <div className="mx-auto w-full max-w-6xl space-y-6">
+      {/* Back navigation */}
+      <Link
+        href="/documents"
+        className="inline-flex items-center gap-2 text-sm font-medium text-teal-700 hover:text-teal-800 transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to documents
+      </Link>
+
+      {/* Document header */}
+      <section
+        className={`rounded-2xl border border-white/20 bg-gradient-to-br ${gradientClass} backdrop-blur-xl p-6 shadow-lg`}
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20 text-slate-700 backdrop-blur-sm border border-white/20">
+            <KindIcon className="h-6 w-6" />
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <h2 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+              {doc.name}
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarDays className="h-4 w-4" />
+                {doc.date}
+              </span>
+              <span className="text-slate-400">·</span>
+              <span>
+                {doc.pages} page{doc.pages > 1 ? "s" : ""}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-white/40 px-2.5 py-1 text-xs font-medium text-slate-700 backdrop-blur-sm border border-white/20">
+              {KIND_LABELS[doc.kind]}
+            </span>
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm border border-white/20 ${FLAG_STYLES[doc.flag]}`}
+            >
+              {FLAG_LABELS[doc.flag]}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-5">
+        {/* Extracted findings */}
+        <section className="rounded-2xl border border-white/20 bg-white/40 backdrop-blur-xl p-6 shadow-lg lg:col-span-3">
+          <h3 className="text-sm font-semibold text-slate-900">
+            AI-extracted findings
+          </h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Synthetic demo extraction · {detail?.extractedAt ?? "not yet processed"}
+          </p>
+
+          {detail?.summary && (
+            <p className="mt-4 text-sm leading-relaxed text-slate-700">
+              {detail.summary}
+            </p>
+          )}
+
+          {detail?.values && detail.values.length > 0 ? (
+            <div className="mt-5 overflow-hidden rounded-xl border border-white/20">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-white/40 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2.5 font-semibold">Test</th>
+                    <th className="px-4 py-2.5 font-semibold">Result</th>
+                    <th className="hidden px-4 py-2.5 font-semibold sm:table-cell">
+                      Reference range
+                    </th>
+                    <th className="px-4 py-2.5 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {detail.values.map((v) => (
+                    <tr key={v.label} className="hover:bg-white/20 transition-colors">
+                      <td className="px-4 py-3 font-medium text-slate-900">{v.label}</td>
+                      <td className="px-4 py-3 text-slate-700">{v.value}</td>
+                      <td className="hidden px-4 py-3 text-slate-500 sm:table-cell">
+                        {v.referenceRange}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium border border-white/20 ${FLAG_STYLES[v.flag]}`}
+                        >
+                          {FLAG_LABELS[v.flag]}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {detail?.impression && (
+            <div className="mt-5 rounded-xl border border-white/20 bg-gradient-to-r from-teal-500/5 to-cyan-500/5 p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-teal-700">
+                Impression
+              </h4>
+              <p className="mt-2 text-sm leading-relaxed text-slate-700">
+                {detail.impression}
+              </p>
+            </div>
+          )}
+
+          <p className="mt-5 text-xs leading-relaxed text-slate-500">
+            Demo data only — not medical advice. Always consult a qualified
+            clinician about your results.
+          </p>
+        </section>
+
+        {/* Metadata + actions */}
+        <div className="space-y-6 lg:col-span-2">
+          <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/10 to-cyan-500/10 p-6 shadow-lg backdrop-blur-xl">
+            <h3 className="text-sm font-semibold text-slate-900">Details</h3>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-600">Document ID</dt>
+                <dd className="font-medium text-slate-900">{doc.id}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-600">Type</dt>
+                <dd className="font-medium text-slate-900">{KIND_LABELS[doc.kind]}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-600">Processing status</dt>
+                <dd className="font-medium capitalize text-slate-900">{doc.status}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-600">Pages</dt>
+                <dd className="font-medium text-slate-900">{doc.pages}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="rounded-2xl border border-white/20 bg-white/40 p-6 shadow-lg backdrop-blur-xl">
+            <h3 className="text-sm font-semibold text-slate-900">
+              Use this document
+            </h3>
+            <div className="mt-4 space-y-3">
+              <Link
+                href="/ask"
+                className="group flex items-center gap-3 rounded-xl border border-white/20 bg-gradient-to-r from-teal-600/90 to-cyan-600/90 p-3.5 text-white shadow-md transition-all duration-300 hover:shadow-xl hover:scale-[1.02]"
+              >
+                <Sparkles className="h-5 w-5 shrink-0" />
+                <span className="text-sm font-medium">
+                  Ask MedCare AI about this report
+                </span>
+              </Link>
+              <Link
+                href="/compare"
+                className="group flex items-center gap-3 rounded-xl border border-white/20 bg-white/50 p-3.5 text-slate-900 shadow-md transition-all duration-300 hover:bg-white/60 hover:shadow-xl hover:scale-[1.02]"
+              >
+                <ArrowLeftRight className="h-5 w-5 shrink-0 text-teal-700" />
+                <span className="text-sm font-medium">
+                  Compare with an earlier report
+                </span>
+              </Link>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
