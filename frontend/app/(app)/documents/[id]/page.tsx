@@ -1,12 +1,23 @@
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { useParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowLeftRight,
   CalendarDays,
   Sparkles,
 } from "lucide-react";
-import { DEMO_DOCUMENTS, DEMO_DOCUMENT_DETAILS } from "@/lib/demo-data";
+import {
+  DEMO_DOCUMENTS,
+  DEMO_DOCUMENT_DETAILS,
+  type DemoDocumentDetail,
+} from "@/lib/demo-data";
+import {
+  getUploadedDocuments,
+  uploadedToDemoDocument,
+  type UploadedDocument,
+} from "@/lib/uploaded-documents";
 import {
   FLAG_LABELS,
   FLAG_STYLES,
@@ -14,16 +25,48 @@ import {
   KIND_LABELS,
 } from "@/lib/document-constants";
 
-export default async function DocumentDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const doc = DEMO_DOCUMENTS.find((d) => d.id === id);
-  if (!doc) notFound();
+export default function DocumentDetailPage() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
 
-  const detail = DEMO_DOCUMENT_DETAILS[doc.id];
+  const demoDoc = DEMO_DOCUMENTS.find((d) => d.id === id);
+  const uploaded: UploadedDocument | undefined = demoDoc
+    ? undefined
+    : getUploadedDocuments().find((d) => d.id === id);
+
+  if (!demoDoc && !uploaded) {
+    return (
+      <div className="mx-auto w-full max-w-6xl">
+        <div className="rounded-2xl border border-white/20 bg-white/40 backdrop-blur-xl p-12 text-center shadow-lg">
+          <h2 className="text-xl font-semibold text-slate-900">
+            Document not found
+          </h2>
+          <p className="mt-2 text-sm text-slate-600">
+            This document does not exist or was removed.
+          </p>
+          <Link
+            href="/documents"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-700"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to documents
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const doc = demoDoc ?? uploadedToDemoDocument(uploaded!);
+  const detail: DemoDocumentDetail | undefined = demoDoc
+    ? DEMO_DOCUMENT_DETAILS[doc.id]
+    : {
+        summary:
+          "Demo upload — AI extraction will run automatically once the backend integration is connected.",
+        extractedAt: uploaded
+          ? new Date(uploaded.uploadedAt).toLocaleString()
+          : "just now",
+      };
+
   const KindIcon = KIND_ICONS[doc.kind];
 
   const gradientClass = {

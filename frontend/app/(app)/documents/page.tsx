@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Search,
   ChevronDown,
@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import DocumentCard from "@/components/DocumentCard";
 import { DEMO_DOCUMENTS, type DemoDocument } from "@/lib/demo-data";
+import { getAllDocuments } from "@/lib/uploaded-documents";
 import { KIND_LABELS } from "@/lib/document-constants";
 
 const FILTER_OPTIONS = [
@@ -25,10 +26,23 @@ export default function DocumentsPage() {
     "all" | "lab" | "imaging" | "report"
   >("all");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [allDocs, setAllDocs] = useState<DemoDocument[]>(DEMO_DOCUMENTS);
+
+  // Include demo-uploaded documents (persisted client-side) alongside the library.
+  useEffect(() => {
+    const update = () => setAllDocs(getAllDocuments());
+    update();
+    window.addEventListener("medcare-uploads-changed", update);
+    window.addEventListener("storage", update);
+    return () => {
+      window.removeEventListener("medcare-uploads-changed", update);
+      window.removeEventListener("storage", update);
+    };
+  }, []);
 
   // Filter and search documents
   const filteredDocuments = useMemo(() => {
-    return DEMO_DOCUMENTS.filter((doc) => {
+    return allDocs.filter((doc) => {
       // Apply type filter
       if (activeFilter !== "all" && doc.kind !== activeFilter) {
         return false;
@@ -44,7 +58,7 @@ export default function DocumentsPage() {
 
       return true;
     });
-  }, [searchQuery, activeFilter]);
+  }, [searchQuery, activeFilter, allDocs]);
 
   const activeFilterLabel = FILTER_OPTIONS.find(
     (opt) => opt.value === activeFilter

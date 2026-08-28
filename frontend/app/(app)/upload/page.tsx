@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   UploadCloud,
   FileText,
@@ -12,12 +12,18 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import {
+  addUploadedDocument,
+  clearUploadedDocuments,
+  getUploadedDocuments,
+  removeUploadedDocument,
+} from "@/lib/uploaded-documents";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
 type FileEntry = {
   id: string;
-  file: File;
+  file?: File;
   name: string;
   size: number;
   type: string;
@@ -56,6 +62,26 @@ export default function UploadPage() {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [announcements, setAnnouncements] = useState<string[]>([]);
+  const entriesRef = useRef<FileEntry[]>([]);
+
+  // Keep a ref in sync so upload finalisation can read entry metadata.
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
+  // Restore previously uploaded files (demo-mode persistence) on mount.
+  useEffect(() => {
+    const restored = getUploadedDocuments().map((d) => ({
+      id: d.id,
+      name: d.name,
+      size: d.size,
+      type: d.type,
+      progress: 100,
+      status: "success" as UploadStatus,
+      uploadedAt: d.uploadedAt,
+    }));
+    setEntries(restored);
+  }, []);
 
   const announce = (msg: string) => {
     setAnnouncements((s) => [...s.slice(-4), msg]);
@@ -139,13 +165,24 @@ export default function UploadPage() {
           );
           announce(`Upload failed for ${id}`);
         } else {
+          const uploadedAt = new Date().toISOString();
           setEntries((prev) =>
             prev.map((e) =>
               e.id === id
-                ? { ...e, status: "success", progress: 100, uploadedAt: new Date().toISOString() }
+                ? { ...e, status: "success", progress: 100, uploadedAt }
                 : e
             )
           );
+          const done = entriesRef.current.find((e) => e.id === id);
+          if (done) {
+            addUploadedDocument({
+              id,
+              name: done.name,
+              size: done.size,
+              type: done.type,
+              uploadedAt,
+            });
+          }
           announce(`Uploaded ${id}`);
         }
       }
@@ -175,12 +212,14 @@ export default function UploadPage() {
       clearInterval(timersRef.current[id]);
       delete timersRef.current[id];
     }
+    removeUploadedDocument(id);
     setEntries((prev) => prev.filter((e) => e.id !== id));
   };
 
   const clearAll = () => {
     Object.keys(timersRef.current).forEach((k) => clearInterval(timersRef.current[k]));
     timersRef.current = {};
+    clearUploadedDocuments();
     setEntries([]);
     announce("Cleared all files");
   };
