@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import Logo from "@/components/Logo";
-import { DEMO_EMAIL, DEMO_PASSWORD, login } from "@/lib/auth";
+import { login } from "@/lib/auth";
 import { useSession } from "@/lib/session";
 
 type FieldErrors = { email?: string; password?: string; form?: string };
@@ -75,11 +75,18 @@ export default function LoginPage() {
           </div>
 
           <div className="mt-6 rounded-lg border border-teal-100 bg-teal-50/60 px-4 py-3 text-xs leading-relaxed text-teal-800">
-            <p className="font-medium">Demo access</p>
+            <p className="font-medium">Getting started</p>
             <p className="mt-0.5">
-              Email: <span className="font-mono">{DEMO_EMAIL}</span>
-              <span className="mx-1.5 text-teal-600">·</span>
-              Password: <span className="font-mono">{DEMO_PASSWORD}</span>
+              Sign in with your Supabase account. If you don't have one, create
+              one at{" "}
+              <a
+                href="https://supabase.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-teal-700 hover:underline"
+              >
+                supabase.com
+              </a>
             </p>
           </div>
 
