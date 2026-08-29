@@ -127,3 +127,32 @@ export async function getCurrentUser(): Promise<MedCareUser | null> {
 
   return toUser(user.email);
 }
+
+/**
+ * Send a password-reset email via Supabase.
+ * The user receives a link that points to /reset-password with a recovery token.
+ */
+export async function resetPassword(email: string): Promise<void> {
+  const supabase = createClient();
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Set a new password for the currently authenticated user (after following the reset link).
+ */
+export async function updatePassword(newPassword: string): Promise<void> {
+  const supabase = createClient();
+
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}

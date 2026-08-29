@@ -20,7 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/documents", label: "Documents", icon: FileText },
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/timeline", label: "Timeline", icon: CalendarClock },
-  { href: "/ask", label: "Ask MedCare AI", icon: Sparkles },
+  { href: "/ask", label: "Ask MediCare AI", icon: Sparkles },
   { href: "/compare", label: "Compare Reports", icon: ArrowLeftRight },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

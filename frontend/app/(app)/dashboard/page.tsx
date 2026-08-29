@@ -23,7 +23,7 @@ const CTAS = [
   },
   {
     href: "/ask",
-    title: "Ask MedCare AI",
+    title: "Ask MediCare AI",
     description: "Ask questions and get answers grounded in your records.",
     icon: Sparkles,
     primary: false,

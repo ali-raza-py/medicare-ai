@@ -1,14 +1,12 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   UploadCloud,
   FileText,
   Image as ImageIcon,
   CheckCircle,
-  AlertCircle,
-  Trash2,
-  Eye,
   Plus,
   X,
 } from "lucide-react";
@@ -57,12 +55,15 @@ function uid() {
 }
 
 export default function UploadPage() {
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const timersRef = useRef<Record<string, number>>({});
+  const abortControllersRef = useRef<Record<string, AbortController>>({});
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [announcements, setAnnouncements] = useState<string[]>([]);
   const entriesRef = useRef<FileEntry[]>([]);
+
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
   // Keep a ref in sync so upload finalisation can read entry metadata.
   useEffect(() => {
@@ -134,69 +135,124 @@ export default function UploadPage() {
   };
 
   const startUpload = (id: string) => {
+    const entry = entriesRef.current.find((e) => e.id === id);
+    if (!entry?.file) return;
+
     setEntries((prev) =>
       prev.map((e) => (e.id === id ? { ...e, status: "uploading", progress: 0 } : e))
     );
 
-    // simulate upload with randomized duration
-    const totalMs = 1200 + Math.random() * 3000; // 1.2s - 4.2s
-    const start = Date.now();
-    const errChance = Math.random();
+    const controller = new AbortController();
+    abortControllersRef.current[id] = controller;
 
-    const tick = () => {
-      const now = Date.now();
-      const elapsed = now - start;
-      let pct = Math.min(100, Math.round((elapsed / totalMs) * 100));
-      setEntries((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, progress: pct } : e))
-      );
-      if (pct >= 100) {
-        // finalise
-        clearInterval(timersRef.current[id]);
-        delete timersRef.current[id];
-        if (errChance < 0.08) {
-          // simulate error ~8%
+    const formData = new FormData();
+    formData.append('file', entry.file);
+    formData.append('title', entry.name.replace(/\.[^.]+$/, ''));
+
+    // Use XHR for real progress tracking
+    const xhr = new XMLHttpRequest();
+    const uploadUrl = `${API_BASE}/api/documents/upload`;
+
+    xhr.open('POST', uploadUrl, true);
+
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        const pct = Math.round((ev.loaded / ev.total) * 90); // reserve 10% for processing
+        setEntries((prev) =>
+          prev.map((e) => (e.id === id ? { ...e, progress: pct } : e))
+        );
+      }
+    };
+
+    xhr.onload = async () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          const documentId = result.document_id;
+
+          // Now call the process endpoint
           setEntries((prev) =>
-            prev.map((e) =>
-              e.id === id
-                ? { ...e, status: "error", error: "Network error during upload" }
-                : e
-            )
+            prev.map((e) => (e.id === id ? { ...e, progress: 95 } : e))
           );
-          announce(`Upload failed for ${id}`);
-        } else {
+
+          const processResponse = await fetch(`${API_BASE}/api/documents/process`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ document_id: documentId }),
+            signal: controller.signal,
+          });
+
+          if (!processResponse.ok) {
+            throw new Error(`Processing failed: ${processResponse.statusText}`);
+          }
+
           const uploadedAt = new Date().toISOString();
           setEntries((prev) =>
             prev.map((e) =>
               e.id === id
-                ? { ...e, status: "success", progress: 100, uploadedAt }
+                ? { ...e, status: "success", progress: 100, uploadedAt, id: documentId }
                 : e
             )
           );
-          const done = entriesRef.current.find((e) => e.id === id);
-          if (done) {
-            addUploadedDocument({
-              id,
-              name: done.name,
-              size: done.size,
-              type: done.type,
-              uploadedAt,
-            });
-          }
-          announce(`Uploaded ${id}`);
+
+          addUploadedDocument({
+            id: documentId,
+            name: entry.name,
+            size: entry.size,
+            type: entry.type,
+            uploadedAt,
+          });
+          announce(`Uploaded and processed ${entry.name}`);
+        } catch (err) {
+          if (controller.signal.aborted) return;
+          const errorMsg = err instanceof Error ? err.message : 'Processing error';
+          setEntries((prev) =>
+            prev.map((e) =>
+              e.id === id
+                ? { ...e, status: "error", error: errorMsg }
+                : e
+            )
+          );
+          announce(`Processing failed for ${entry.name}`);
         }
+      } else {
+        const errorMsg = `Upload failed (${xhr.status})`;
+        setEntries((prev) =>
+          prev.map((e) =>
+            e.id === id
+              ? { ...e, status: "error", error: errorMsg }
+              : e
+          )
+        );
+        announce(`Upload failed for ${entry.name}`);
       }
+      delete abortControllersRef.current[id];
     };
 
-    // run tick every 120ms
-    const timerId = window.setInterval(tick, 120);
-    timersRef.current[id] = timerId;
+    xhr.onerror = () => {
+      if (controller.signal.aborted) return;
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.id === id
+            ? { ...e, status: "error", error: "Network error during upload" }
+            : e
+        )
+      );
+      announce(`Upload failed for ${entry.name}`);
+      delete abortControllersRef.current[id];
+    };
+
+    xhr.onabort = () => {
+      delete abortControllersRef.current[id];
+    };
+
+    xhr.send(formData);
   };
 
   const cancelUpload = (id: string) => {
-    if (timersRef.current[id]) {
-      clearInterval(timersRef.current[id]);
-      delete timersRef.current[id];
+    if (abortControllersRef.current[id]) {
+      abortControllersRef.current[id].abort();
+      delete abortControllersRef.current[id];
     }
     setEntries((prev) => prev.filter((e) => e.id !== id));
     announce(`Cancelled upload`);
@@ -208,17 +264,17 @@ export default function UploadPage() {
   };
 
   const removeEntry = (id: string) => {
-    if (timersRef.current[id]) {
-      clearInterval(timersRef.current[id]);
-      delete timersRef.current[id];
+    if (abortControllersRef.current[id]) {
+      abortControllersRef.current[id].abort();
+      delete abortControllersRef.current[id];
     }
     removeUploadedDocument(id);
     setEntries((prev) => prev.filter((e) => e.id !== id));
   };
 
   const clearAll = () => {
-    Object.keys(timersRef.current).forEach((k) => clearInterval(timersRef.current[k]));
-    timersRef.current = {};
+    Object.values(abortControllersRef.current).forEach((c) => c.abort());
+    abortControllersRef.current = {};
     clearUploadedDocuments();
     setEntries([]);
     announce("Cleared all files");
@@ -350,7 +406,7 @@ export default function UploadPage() {
                             {e.status === 'success' && (
                               <div className="flex items-center gap-1 text-teal-700">
                                 <CheckCircle className="h-4 w-4" />
-                                <button title="View" className="text-xs text-slate-700 hover:underline">View</button>
+                                <button title="View" onClick={() => router.push(`/documents/${e.id}`)} className="text-xs text-slate-700 hover:underline">View</button>
                                 <button title="Remove" onClick={() => removeEntry(e.id)} className="text-xs text-red-600 hover:underline">Remove</button>
                               </div>
                             )}
@@ -385,7 +441,7 @@ export default function UploadPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button className="rounded-md bg-white/80 px-3 py-1 text-sm text-teal-700 hover:bg-white">View all</button>
+                <button onClick={() => router.push('/documents')} className="rounded-md bg-white/80 px-3 py-1 text-sm text-teal-700 hover:bg-white">View all</button>
                 <button onClick={() => fileInputRef.current?.click()} className="rounded-md bg-teal-600 px-3 py-1 text-sm text-white hover:bg-teal-700">Upload more</button>
               </div>
             </div>
@@ -401,7 +457,7 @@ export default function UploadPage() {
         <section className="mt-6">
           <div className="rounded-2xl border border-slate-200 bg-white/40 p-4 backdrop-blur-md shadow-sm">
             <h2 className="text-sm font-medium text-slate-900">Uploaded files</h2>
-            <p className="mt-1 text-xs text-slate-600">Files and metadata from recent uploads (demo-mode).</p>
+            <p className="mt-1 text-xs text-slate-600">Files and metadata from recent uploads.</p>
 
             <div className="mt-4 overflow-auto">
               <table className="w-full table-fixed text-left text-sm">
@@ -440,7 +496,7 @@ export default function UploadPage() {
             </div>
 
             <div className="mt-4 flex items-center justify-end gap-2">
-              <button onClick={() => {}} className="rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">Export</button>
+              <button onClick={() => router.push('/documents')} className="rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">View in documents</button>
               <button onClick={() => clearAll()} className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 hover:bg-red-100">Clear all</button>
             </div>
           </div>

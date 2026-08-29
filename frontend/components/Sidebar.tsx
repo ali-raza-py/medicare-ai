@@ -42,7 +42,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="flex h-16 items-center gap-3 border-b border-slate-200 px-5">
         <Logo size="sm" />
         <div>
-          <p className="text-sm font-semibold text-slate-900">MedCare AI</p>
+          <p className="text-sm font-semibold text-slate-900">MediCare AI</p>
           <p className="text-xs text-slate-500">Health record workspace</p>
         </div>
       </div>
@@ -53,7 +53,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <div className="border-t border-slate-200 p-4">
         <p className="text-xs leading-relaxed text-slate-500">
-          MedCare AI organizes and explains your records. It does not provide
+          MediCare AI organizes and explains your records. It does not provide
           medical advice, diagnosis, or treatment.
         </p>
       </div>

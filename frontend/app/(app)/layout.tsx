@@ -27,7 +27,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3 text-slate-400">
           <HeartPulse className="h-8 w-8 animate-pulse text-teal-600" />
-          <p className="text-sm">Loading MedCare AI...</p>
+          <p className="text-sm">Loading MediCare AI...</p>
         </div>
       </div>
     );

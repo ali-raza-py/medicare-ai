@@ -39,7 +39,7 @@ export async function uploadAndProcessDocument(file: File): Promise<MedicalDocum
     type: file.type.includes('pdf') ? 'PDF' : file.type.includes('image') ? 'Image' : 'Document',
     date: new Date().toISOString().slice(0, 10),
     status: 'Ready',
-    summary: 'Uploaded and processed by the MedCare AI backend.',
+    summary: 'Uploaded and processed by the MediCare AI backend.',
   };
 }
 

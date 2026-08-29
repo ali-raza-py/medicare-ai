@@ -18,7 +18,7 @@ export default function Header({
   const current = NAV_ITEMS.find(
     (item) => pathname === item.href || pathname.startsWith(item.href + "/")
   );
-  const title = current?.label ?? "MedCare AI";
+  const title = current?.label ?? "MediCare AI";
 
   const initials = user.name
     .split(" ")

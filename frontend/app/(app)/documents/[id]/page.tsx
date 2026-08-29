@@ -227,7 +227,7 @@ export default function DocumentDetailPage() {
               >
                 <Sparkles className="h-5 w-5 shrink-0" />
                 <span className="text-sm font-medium">
-                  Ask MedCare AI about this report
+                  Ask MediCare AI about this report
                 </span>
               </Link>
               <Link

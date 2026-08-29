@@ -126,7 +126,7 @@ function LoginCard() {
           <div className="flex flex-col items-center text-center">
             <Logo size="lg" />
             <h1 className="mt-4 text-xl font-semibold tracking-tight text-slate-900">
-              {isSignup ? "Create your account" : "Sign in to MedCare AI"}
+              {isSignup ? "Create your account" : "Sign in to MediCare AI"}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               Your medical records, organized and evidence-grounded.
@@ -293,6 +293,18 @@ function LoginCard() {
               </div>
             ) : null}
 
+            {isSignup ? null : (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => router.push("/forgot-password")}
+                  className="text-sm font-medium text-teal-700 hover:text-teal-800 hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -316,13 +328,13 @@ function LoginCard() {
               onClick={() => switchMode(isSignup ? "signin" : "signup")}
               className="font-semibold text-teal-700 hover:underline"
             >
-              {isSignup ? "Sign in" : "Create one for free"}
+              {isSignup ? "Sign in" : "Create one"}
             </button>
           </p>
         </div>
 
         <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
-          MedCare AI organizes and explains your records. It does not provide
+          MediCare AI organizes and explains your records. It does not provide
           medical advice, diagnosis, or treatment.
         </p>
       </div>

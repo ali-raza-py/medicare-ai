@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MedCare AI",
+  title: "MediCare AI",
   description:
     "Your medical records, organized into one searchable, evidence-grounded timeline.",
 };
