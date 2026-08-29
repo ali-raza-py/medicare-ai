@@ -9,11 +9,9 @@ import {
 } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import RecentDocuments from "@/components/RecentDocuments";
-import {
-  DEMO_PATIENT,
-  DEMO_STATS,
-  DEMO_TIMELINE,
-} from "@/lib/demo-data";
+import { DEMO_STATS, DEMO_TIMELINE } from "@/lib/demo-data";
+import { displayNameFromEmail } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 
 const CTAS = [
   {
@@ -39,14 +37,36 @@ const CTAS = [
   },
 ] as const;
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const metadata = (user?.user_metadata ?? {}) as Record<string, unknown>;
+  const metadataName = [metadata.full_name, metadata.name].find(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+  const email = user?.email ?? "";
+  const displayName =
+    metadataName?.trim() || (email ? displayNameFromEmail(email) : "there");
+  const firstName = displayName.split(" ")[0] || "there";
+  const initials =
+    displayName
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "MC";
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
       {/* Welcome + profile summary */}
       <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
-            Welcome back, {DEMO_PATIENT.name.split(" ")[0]}
+            Welcome back, {firstName}
           </h2>
           <p className="mt-2 text-sm text-slate-600">
             Here is an overview of your health records.
@@ -55,16 +75,13 @@ export default function DashboardPage() {
 
         <div className="flex items-center gap-4 rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/10 to-cyan-500/10 p-4 shadow-lg backdrop-blur-xl">
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-600 to-teal-700 text-sm font-semibold text-white shadow-md">
-            {DEMO_PATIENT.initials}
+            {initials}
           </span>
           <div className="text-sm">
-            <p className="font-semibold text-slate-900">{DEMO_PATIENT.name}</p>
-            <p className="mt-0.5 text-slate-600">
-              {DEMO_PATIENT.ageYears} years · {DEMO_PATIENT.bloodGroup} · ID{" "}
-              {DEMO_PATIENT.patientId}
-            </p>
+            <p className="font-semibold text-slate-900">{displayName}</p>
+            <p className="mt-0.5 text-slate-600">{email}</p>
             <p className="mt-1 inline-flex rounded-full bg-white/40 px-2 py-0.5 text-xs font-medium text-slate-700 backdrop-blur-sm border border-white/20">
-              Synthetic demo data
+              Signed in with Supabase
             </p>
           </div>
         </div>

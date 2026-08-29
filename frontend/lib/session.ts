@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { MedCareUser } from "@/lib/auth";
-import { SESSION_EVENT } from "@/lib/auth";
+import { SESSION_EVENT, displayNameFromEmail } from "@/lib/auth";
 
 /**
  * Hook to get and watch the current authenticated user from Supabase
@@ -23,7 +23,7 @@ export function useSession(): MedCareUser | null {
 
       if (authUser?.email) {
         setUser({
-          name: authUser.email.split("@")[0] || "User",
+          name: displayNameFromEmail(authUser.email),
           email: authUser.email,
         });
       } else {
@@ -39,11 +39,10 @@ export function useSession(): MedCareUser | null {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user?.email) {
-        const currentUser: MedCareUser = {
-          name: session.user.email.split("@")[0] || "User",
+        setUser({
+          name: displayNameFromEmail(session.user.email),
           email: session.user.email,
-        };
-        setUser(currentUser);
+        });
       } else {
         setUser(null);
       }

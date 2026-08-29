@@ -13,11 +13,36 @@ export const DEMO_EMAIL = "demo@medcare.ai";
 export const DEMO_PASSWORD = "medcare123";
 
 /**
- * Sign up a new user with Supabase
+ * Human-friendly display name derived from the account email
+ * (e.g. "ayesha.khan@example.com" becomes "Ayesha Khan").
  */
-export async function signup(email: string, password: string): Promise<MedCareUser> {
+export function displayNameFromEmail(email: string): string {
+  const pretty = email
+    .split("@")[0]
+    .split(/[._\-+]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+  return pretty || email;
+}
+
+function toUser(email: string): MedCareUser {
+  return { name: displayNameFromEmail(email), email };
+}
+
+/**
+ * Sign up a new user with Supabase.
+ * `needsEmailConfirmation` is true when the Supabase project requires email
+ * confirmation — in that case no session exists until the user opens the link.
+ */
+export type SignupResult = {
+  user: MedCareUser;
+  needsEmailConfirmation: boolean;
+};
+
+export async function signup(email: string, password: string): Promise<SignupResult> {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -31,13 +56,19 @@ export async function signup(email: string, password: string): Promise<MedCareUs
     throw new Error("Signup failed: no user data returned");
   }
 
-  const user: MedCareUser = {
-    name: data.user.email?.split("@")[0] || "User",
-    email: data.user.email,
-  };
+  // Supabase returns an empty identities list when the email is already registered.
+  if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    throw new Error("An account with this email already exists. Sign in instead.");
+  }
 
-  window.dispatchEvent(new Event(SESSION_EVENT));
-  return user;
+  const user = toUser(data.user.email);
+
+  const needsEmailConfirmation = !data.session;
+  if (!needsEmailConfirmation) {
+    window.dispatchEvent(new Event(SESSION_EVENT));
+  }
+
+  return { user, needsEmailConfirmation };
 }
 
 /**
@@ -59,10 +90,7 @@ export async function login(email: string, password: string): Promise<MedCareUse
     throw new Error("Login failed: no user data returned");
   }
 
-  const user: MedCareUser = {
-    name: data.user.email?.split("@")[0] || "User",
-    email: data.user.email,
-  };
+  const user = toUser(data.user.email);
 
   window.dispatchEvent(new Event(SESSION_EVENT));
   return user;
@@ -97,8 +125,5 @@ export async function getCurrentUser(): Promise<MedCareUser | null> {
     return null;
   }
 
-  return {
-    name: user.email.split("@")[0] || "User",
-    email: user.email,
-  };
+  return toUser(user.email);
 }
