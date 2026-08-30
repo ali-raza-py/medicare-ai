@@ -105,7 +105,7 @@ export async function logout(): Promise<void> {
   const { error } = await supabase.auth.signOut();
 
   if (error) {
-    console.error("Logout error:", error);
+    throw new Error(error.message);
   }
 
   window.dispatchEvent(new Event(SESSION_EVENT));

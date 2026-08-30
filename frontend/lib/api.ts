@@ -7,7 +7,6 @@ import {
   MedicalComparisonResponse,
   SymptomAnalysisRequest,
 } from '@/types/medical';
-import { compareMedicalReports } from './medical-rag';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
@@ -136,19 +135,25 @@ export async function askMedicalQuestion(
 export async function compareReports(
   payload: MedicalComparisonRequest,
 ): Promise<MedicalComparisonResponse> {
-  try {
-    const response = await fetch(`${API_BASE}/api/compare-reports`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      return compareMedicalReports(payload);
+  const compareHeaders = await authHeaders({ 'Content-Type': 'application/json' });
+  const response = await fetch(`${API_BASE}/api/compare-reports`, {
+    method: 'POST',
+    headers: compareHeaders,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const parsed = await response.json();
+      if (parsed.detail) detail = parsed.detail;
+    } catch {
+      // non-JSON error body
     }
-    return await response.json();
-  } catch {
-    return compareMedicalReports(payload);
+    throw new Error(detail);
   }
+
+  return (await response.json()) as MedicalComparisonResponse;
 }
 
 // --- Timeline ---
@@ -216,7 +221,7 @@ function normalizeTimelineEvents(raw: unknown): TimelineEvent[] {
 // failures surface as errors to the caller.
 export async function fetchTimeline(): Promise<TimelineEvent[]> {
   const response = await fetch(`${API_BASE}/api/timeline`, {
-    headers: { Accept: 'application/json' },
+    headers: await authHeaders({ Accept: 'application/json' }),
     cache: 'no-store',
   });
   if (!response.ok) {
