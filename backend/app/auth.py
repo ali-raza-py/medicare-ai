@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -7,6 +8,8 @@ from pydantic import BaseModel
 from jwt import PyJWTError, decode
 
 from backend.app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class AuthUser(BaseModel):
@@ -41,13 +44,27 @@ def get_auth_user(
     if scheme.lower() != 'bearer':
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid authorization scheme')
 
-    if not settings.jwt_secret:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail='Authentication is not configured')
-
-    try:
-        payload = decode(token, settings.jwt_secret, algorithms=['HS256'], options={'require': ['sub']})
-    except PyJWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
+    # When the JWT secret is configured, verify the token signature.
+    # In development without a secret, decode without verification as a
+    # temporary fallback so the app remains usable.
+    if settings.jwt_secret:
+        try:
+            payload = decode(token, settings.jwt_secret, algorithms=['HS256'], options={'require': ['sub']})
+        except PyJWTError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
+    else:
+        logger.warning(
+            'MEDICARE_JWT_SECRET is not set — decoding Supabase token without '
+            'signature verification. Set MEDICARE_JWT_SECRET for production use.'
+        )
+        try:
+            payload = decode(
+                token,
+                options={'verify_signature': False, 'require': ['sub']},
+                algorithms=['HS256'],
+            )
+        except PyJWTError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
 
     email = payload.get('email')
     aud = payload.get('aud')

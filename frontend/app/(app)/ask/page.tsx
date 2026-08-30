@@ -2,18 +2,29 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BookOpen,
+  ChevronDown,
+  ChevronUp,
   FileText,
+  Lightbulb,
   Loader2,
   Send,
   ShieldCheck,
   Sparkles,
   User,
   X,
+  AlertCircle,
+  MessageSquare,
+  RotateCcw,
 } from "lucide-react";
 import { askMedicalQuestion } from "@/lib/api";
 import { getAllDocuments } from "@/lib/uploaded-documents";
 import { DEMO_DOCUMENT_DETAILS } from "@/lib/demo-data";
 import type { MedicalAnswerResponse, MedicalDocumentRecord } from "@/types/medical";
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -24,6 +35,10 @@ type ChatMessage = {
   model?: string;
   loading?: boolean;
 };
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
 
 const toMedicalDocumentRecord = (doc: {
   id: string;
@@ -41,6 +56,178 @@ const toMedicalDocumentRecord = (doc: {
   summary: "Relevant patient record document loaded for question answering.",
 });
 
+function confidenceColor(confidence?: string) {
+  if (!confidence) return "text-slate-400 bg-slate-500/10";
+  switch (confidence.toLowerCase()) {
+    case "high":
+      return "text-emerald-400 bg-emerald-500/10";
+    case "medium":
+      return "text-amber-400 bg-amber-500/10";
+    case "low":
+      return "text-rose-400 bg-rose-500/10";
+    default:
+      return "text-slate-400 bg-slate-500/10";
+  }
+}
+
+function confidenceDot(confidence?: string) {
+  if (!confidence) return "bg-slate-400";
+  switch (confidence.toLowerCase()) {
+    case "high":
+      return "bg-emerald-400";
+    case "medium":
+      return "bg-amber-400";
+    case "low":
+      return "bg-rose-400";
+    default:
+      return "bg-slate-400";
+  }
+}
+
+const SUGGESTED_QUESTIONS = [
+  { icon: "🩸", text: "What do my blood test results indicate?" },
+  { icon: "📊", text: "Explain HbA1c levels and what they mean" },
+  { icon: "❤️", text: "What are normal cholesterol ranges?" },
+  { icon: "💊", text: "How do I interpret liver function tests?" },
+];
+
+/* ------------------------------------------------------------------ */
+/*  Typing indicator                                                   */
+/* ------------------------------------------------------------------ */
+
+function TypingIndicator() {
+  return (
+    <div className="flex items-center gap-1.5 py-1">
+      <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-teal-400 [animation-delay:0ms]" />
+      <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-teal-400 [animation-delay:150ms]" />
+      <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-teal-400 [animation-delay:300ms]" />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Evidence sources (collapsible)                                     */
+/* ------------------------------------------------------------------ */
+
+function EvidenceSources({
+  evidence,
+}: {
+  evidence: { documentName: string; snippet: string; sourceId: string }[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? evidence : evidence.slice(0, 2);
+
+  return (
+    <div className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.03]">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-white/[0.03]"
+      >
+        <BookOpen className="h-3.5 w-3.5 text-teal-400" />
+        <span className="text-xs font-semibold tracking-wide text-slate-300">
+          {evidence.length} Source{evidence.length !== 1 ? "s" : ""}
+        </span>
+        <span className="ml-auto">
+          {expanded ? (
+            <ChevronUp className="h-3.5 w-3.5 text-slate-500" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
+          )}
+        </span>
+      </button>
+      <div className="space-y-1.5 px-3 pb-2.5">
+        {visible.map((e, j) => (
+          <div
+            key={j}
+            className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2"
+          >
+            <div className="flex items-center gap-1.5">
+              <FileText className="h-3 w-3 shrink-0 text-teal-500" />
+              <p className="text-xs font-medium text-teal-400">{e.documentName}</p>
+            </div>
+            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">
+              &ldquo;{e.snippet}&rdquo;
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Chat message bubble                                                */
+/* ------------------------------------------------------------------ */
+
+function MessageBubble({ msg }: { msg: ChatMessage }) {
+  const isUser = msg.role === "user";
+
+  return (
+    <div
+      className={`group flex gap-3 animate-message ${
+        isUser ? "flex-row-reverse" : "flex-row"
+      }`}
+    >
+      {/* Avatar */}
+      <div
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-sm ${
+          isUser
+            ? "bg-gradient-to-br from-teal-500 to-cyan-600 text-white"
+            : "bg-slate-800 border border-white/10 text-teal-400"
+        }`}
+      >
+        {isUser ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+      </div>
+
+      {/* Bubble */}
+      <div className={`max-w-[75%] ${isUser ? "items-end" : "items-start"}`}>
+        <div
+          className={`rounded-2xl px-4 py-3 shadow-sm ${
+            isUser
+              ? "bg-gradient-to-br from-teal-600 to-teal-700 text-white"
+              : "border border-white/10 bg-slate-900/80 text-slate-100"
+          }`}
+        >
+          {msg.loading ? (
+            <TypingIndicator />
+          ) : (
+            <p className="whitespace-pre-wrap text-[0.9rem] leading-7">{msg.content}</p>
+          )}
+        </div>
+
+        {/* Evidence & confidence (assistant only) */}
+        {!msg.loading && msg.role === "assistant" && (
+          <>
+            {msg.evidence && msg.evidence.length > 0 && (
+              <EvidenceSources evidence={msg.evidence} />
+            )}
+            {msg.confidence && (
+              <div className="mt-2 flex items-center gap-2 px-1">
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[0.7rem] font-medium ${confidenceColor(msg.confidence)}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${confidenceDot(msg.confidence)}`} />
+                  {msg.confidence} confidence
+                </span>
+                {msg.provider && msg.provider !== "fallback" && (
+                  <span className="text-[0.65rem] text-slate-500">
+                    via {msg.provider}
+                  </span>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Main page component                                                */
+/* ================================================================== */
+
 export default function AskPage() {
   const [question, setQuestion] = useState("");
   const [documents, setDocuments] = useState<MedicalDocumentRecord[]>([]);
@@ -49,16 +236,24 @@ export default function AskPage() {
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const available = getAllDocuments().slice(0, 6).map(toMedicalDocumentRecord);
     setDocuments(available);
   }, []);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [question]);
 
   const selectedDocuments = useMemo(
     () => documents.filter((doc) => selectedIds.includes(doc.id)),
@@ -71,7 +266,6 @@ export default function AskPage() {
     );
   };
 
-  /** Build rich context text from selected documents (demo details + uploaded metadata). */
   const buildContext = (): string[] => {
     const parts: string[] = [];
     for (const doc of selectedDocuments) {
@@ -93,7 +287,6 @@ export default function AskPage() {
         }
         parts.push(lines.join("\n"));
       } else {
-        // Uploaded document — just the metadata, backend will look up full content by ID
         parts.push(`Document: ${doc.title} (${doc.type}, ${doc.date})`);
       }
     }
@@ -110,7 +303,6 @@ export default function AskPage() {
     setError(null);
     setLoading(true);
 
-    // Add the user message and a loading placeholder
     const userMsg: ChatMessage = { role: "user", content: trimmed };
     const loadingMsg: ChatMessage = { role: "assistant", content: "", loading: true };
     setMessages((prev) => [...prev, userMsg, loadingMsg]);
@@ -118,7 +310,6 @@ export default function AskPage() {
 
     try {
       const contextParts = buildContext();
-      // Previous conversation history (exclude the just-added user message)
       const history = messages
         .filter((m) => !m.loading)
         .map((m) => ({ role: m.role, content: m.content }));
@@ -130,7 +321,6 @@ export default function AskPage() {
         history: history.length > 0 ? history : undefined,
       });
 
-      // Replace loading placeholder with the real answer
       setMessages((prev) => [
         ...prev.slice(0, -1),
         {
@@ -152,7 +342,6 @@ export default function AskPage() {
           ? submitError.message
           : "The AI request could not be completed.";
       setError(message);
-      // Remove the loading placeholder on error
       setMessages((prev) => prev.slice(0, -1));
     } finally {
       setLoading(false);
@@ -166,113 +355,148 @@ export default function AskPage() {
     }
   };
 
+  const handleClearChat = () => {
+    setMessages([]);
+    setError(null);
+  };
+
   const hasMessages = messages.length > 0;
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-7rem)] w-full max-w-5xl flex-col gap-4">
-      {/* Header */}
-      <div className="rounded-2xl border border-white/20 bg-gradient-to-br from-teal-600/10 to-cyan-600/10 px-5 py-4 shadow-lg backdrop-blur-xl">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600 text-white shadow-md">
-            <Sparkles className="h-4 w-4" />
+    <div className="mx-auto flex h-[calc(100vh-7rem)] w-full max-w-5xl flex-col gap-3">
+      {/* ── Header ─────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between rounded-2xl border border-white/40 bg-gradient-to-r from-teal-600/10 via-cyan-600/5 to-emerald-600/10 px-5 py-4 shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-3.5">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg shadow-teal-500/20">
+            <Sparkles className="h-5 w-5" />
           </span>
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-teal-700">
+            <h1 className="text-lg font-bold tracking-tight text-slate-900">
               Ask MediCare AI
-            </p>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              Clinical question assistant
             </h1>
+            <p className="text-xs text-slate-500">
+              Evidence-based clinical answers from your records
+            </p>
           </div>
         </div>
+        {hasMessages && (
+          <button
+            type="button"
+            onClick={handleClearChat}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-800"
+          >
+            <RotateCcw className="h-3 w-3" />
+            New chat
+          </button>
+        )}
       </div>
 
-      {/* Document selector (collapsible) */}
-      <div className="rounded-2xl border border-white/20 bg-white/60 px-4 py-3 shadow-lg backdrop-blur-xl">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-800">
-            Reference documents{" "}
-            <span className="ml-1 font-normal text-slate-500">
-              ({selectedIds.length} selected)
-            </span>
-          </p>
-          {selectedIds.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setSelectedIds([])}
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
-            >
-              <X className="h-3 w-3" />
-              Clear selection
-            </button>
-          )}
-        </div>
-        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-          {documents.map((doc) => {
-            const selected = selectedIds.includes(doc.id);
-            return (
+      {/* ── Document selector ──────────────────────────────────── */}
+      {documents.length > 0 && (
+        <div className="rounded-2xl border border-white/40 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-slate-400" />
+              <p className="text-sm font-semibold text-slate-700">
+                Reference documents
+              </p>
+              {selectedIds.length > 0 && (
+                <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[0.65rem] font-semibold text-teal-700">
+                  {selectedIds.length}
+                </span>
+              )}
+            </div>
+            {selectedIds.length > 0 && (
               <button
-                key={doc.id}
                 type="button"
-                onClick={() => handleToggleDocument(doc.id)}
-                className={`flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs transition ${
-                  selected
-                    ? "border-teal-500 bg-teal-50 font-medium text-teal-900"
-                    : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
-                }`}
+                onClick={() => setSelectedIds([])}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
               >
-                <FileText className="h-3.5 w-3.5 shrink-0" />
-                <span className="max-w-[140px] truncate">{doc.title}</span>
+                <X className="h-3 w-3" />
+                Clear
               </button>
-            );
-          })}
+            )}
+          </div>
+          <div className="mt-2.5 flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
+            {documents.map((doc) => {
+              const selected = selectedIds.includes(doc.id);
+              return (
+                <button
+                  key={doc.id}
+                  type="button"
+                  onClick={() => handleToggleDocument(doc.id)}
+                  className={`flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-2 text-left text-xs transition-all duration-200 ${
+                    selected
+                      ? "border-teal-400/60 bg-teal-50 font-semibold text-teal-800 shadow-sm shadow-teal-500/10"
+                      : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                  }`}
+                >
+                  <FileText
+                    className={`h-3.5 w-3.5 shrink-0 ${selected ? "text-teal-500" : "text-slate-400"}`}
+                  />
+                  <span className="max-w-[150px] truncate">{doc.title}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Chat area */}
-      <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-white/20 bg-slate-950 shadow-lg">
-        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
-          <ShieldCheck className="h-3.5 w-3.5 text-teal-400" />
-          <span className="text-xs font-medium text-teal-400">
+      {/* ── Chat area ──────────────────────────────────────────── */}
+      <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800/50 bg-slate-950 shadow-xl shadow-slate-900/20">
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
+          <ShieldCheck className="h-3.5 w-3.5 text-teal-500" />
+          <span className="text-xs font-medium text-teal-400/80">
             Evidence-based answers
           </span>
           {messages.length > 0 && (
-            <span className="ml-auto text-xs text-slate-500">
-              {messages.filter((m) => m.role === "assistant" && !m.loading).length} answer
-              {messages.filter((m) => m.role === "assistant" && !m.loading).length !== 1
-                ? "s"
-                : ""}
-            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <MessageSquare className="h-3 w-3 text-slate-600" />
+              <span className="text-xs text-slate-500">
+                {messages.filter((m) => m.role === "assistant" && !m.loading).length} response
+                {messages.filter((m) => m.role === "assistant" && !m.loading).length !== 1
+                  ? "s"
+                  : ""}
+              </span>
+            </div>
           )}
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        {/* Messages */}
+        <div className="flex-1 space-y-5 overflow-y-auto scrollbar-thin px-4 py-5 sm:px-6">
           {!hasMessages && (
-            <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-                <Sparkles className="mx-auto h-6 w-6 text-teal-400" />
-                <p className="mt-3 text-sm font-medium text-slate-200">
-                  Ask a medical question
+            <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
+              {/* Hero icon */}
+              <div className="relative">
+                <div className="absolute inset-0 animate-pulse rounded-full bg-teal-500/10 blur-xl" />
+                <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-teal-500/20 to-cyan-500/20 ring-1 ring-teal-500/20">
+                  <Sparkles className="h-7 w-7 text-teal-400" />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-base font-semibold text-slate-200">
+                  How can I help you today?
                 </p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">
-                  Select reference documents above for record-based answers,
-                  <br />
-                  or ask any general medical question.
+                <p className="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-slate-400">
+                  Ask a medical question or select reference documents above
+                  for answers grounded in your health records.
                 </p>
               </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                {[
-                  "What do my blood test results indicate?",
-                  "Explain HbA1c levels",
-                  "What are normal cholesterol ranges?",
-                ].map((q) => (
+
+              {/* Suggestion chips */}
+              <div className="grid max-w-md gap-2">
+                {SUGGESTED_QUESTIONS.map((q) => (
                   <button
-                    key={q}
+                    key={q.text}
                     type="button"
-                    onClick={() => setQuestion(q)}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition hover:border-teal-500/50 hover:text-teal-300"
+                    onClick={() => setQuestion(q.text)}
+                    className="group flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-left text-sm text-slate-300 transition-all duration-200 hover:border-teal-500/30 hover:bg-teal-500/5 hover:text-teal-300"
                   >
-                    {q}
+                    <span className="text-base">{q.icon}</span>
+                    <span className="flex-1">{q.text}</span>
+                    <Lightbulb className="h-3.5 w-3.5 shrink-0 text-slate-600 transition group-hover:text-teal-500" />
                   </button>
                 ))}
               </div>
@@ -280,82 +504,21 @@ export default function AskPage() {
           )}
 
           {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`flex gap-3 ${
-                msg.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
-              {msg.role === "assistant" && (
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-600/20 text-teal-400">
-                  <Sparkles className="h-3.5 w-3.5" />
-                </span>
-              )}
-              <div
-                className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
-                  msg.role === "user"
-                    ? "bg-teal-600 text-white"
-                    : "border border-white/10 bg-white/5 text-slate-100"
-                }`}
-              >
-                {msg.loading ? (
-                  <div className="flex items-center gap-2 py-1 text-sm text-slate-400">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Thinking...
-                  </div>
-                ) : (
-                  <>
-                    <p className="whitespace-pre-wrap text-sm leading-7">{msg.content}</p>
-                    {msg.evidence && msg.evidence.length > 0 && (
-                      <div className="mt-3 space-y-1.5 border-t border-white/10 pt-2.5">
-                        <p className="text-xs font-medium text-slate-400">Sources</p>
-                        {msg.evidence.slice(0, 3).map((e, j) => (
-                          <div
-                            key={j}
-                            className="rounded-lg bg-white/5 px-2.5 py-1.5"
-                          >
-                            <p className="text-xs font-medium text-teal-400">
-                              {e.documentName}
-                            </p>
-                            <p className="mt-0.5 line-clamp-2 text-xs text-slate-400">
-                              {e.snippet}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {msg.confidence && msg.role === "assistant" && (
-                      <p className="mt-2 text-xs text-slate-500">
-                        Confidence: {msg.confidence}
-                        {msg.provider && msg.provider !== "fallback" && (
-                          <span className="ml-2">
-                            ({msg.provider}/{msg.model})
-                          </span>
-                        )}
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-              {msg.role === "user" && (
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-600/40 text-teal-200">
-                  <User className="h-3.5 w-3.5" />
-                </span>
-              )}
-            </div>
+            <MessageBubble key={i} msg={msg} />
           ))}
           <div ref={chatEndRef} />
         </div>
 
         {/* Error bar */}
         {error && (
-          <div className="mx-4 mb-2 rounded-xl border border-red-500/30 bg-red-950/50 px-3 py-2 text-xs text-red-300">
-            <div className="flex items-start justify-between gap-2">
-              <span>{error}</span>
+          <div className="mx-4 mb-2 animate-slide-up">
+            <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-950/40 px-3.5 py-2.5">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+              <p className="flex-1 text-xs leading-relaxed text-red-300">{error}</p>
               <button
                 type="button"
                 onClick={() => setError(null)}
-                className="shrink-0 text-red-400 hover:text-red-200"
+                className="shrink-0 rounded-md p-0.5 text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -364,36 +527,45 @@ export default function AskPage() {
         )}
 
         {/* Input area */}
-        <div className="border-t border-white/10 p-3">
-          <div className="flex gap-2">
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={2}
-              placeholder={
-                selectedIds.length > 0
-                  ? "Ask about the selected records..."
-                  : "Ask a medical question..."
-              }
-              className="flex-1 resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-teal-500/60 focus:ring-1 focus:ring-teal-500/20"
-              disabled={loading}
-            />
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={loading || !question.trim()}
-              className="flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-xl bg-teal-600 text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500"
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </button>
+        <div className="border-t border-white/[0.06] bg-slate-950/80 p-3 sm:p-4">
+          <div className="flex items-end gap-2.5">
+            <div className="relative flex-1">
+              <textarea
+                ref={textareaRef}
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                placeholder={
+                  selectedIds.length > 0
+                    ? "Ask about the selected records..."
+                    : "Ask a medical question..."
+                }
+                className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 pr-12 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all duration-200 focus:border-teal-500/40 focus:bg-white/[0.07] focus:ring-2 focus:ring-teal-500/10"
+                disabled={loading}
+              />
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading || !question.trim()}
+                className={`absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${
+                  loading || !question.trim()
+                    ? "cursor-not-allowed bg-slate-800 text-slate-600"
+                    : "bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40"
+                }`}
+              >
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </div>
-          <p className="mt-1.5 text-center text-xs text-slate-600">
-            Press Enter to send &middot; Shift+Enter for a new line
+          <p className="mt-2 text-center text-[0.7rem] text-slate-600">
+            Press <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 font-mono text-slate-400">Enter</kbd> to send
+            {" "}&middot;{" "}
+            <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 font-mono text-slate-400">Shift+Enter</kbd> for new line
           </p>
         </div>
       </div>
