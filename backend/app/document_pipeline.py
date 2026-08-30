@@ -4,6 +4,22 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+try:
+    from backend.app.ocr import extract_document, OCR_AVAILABLE, OCRDocumentResult
+except ImportError:
+    OCR_AVAILABLE = False
+
+
+def extract_text_structured(file_bytes: bytes, filename: str) -> dict | None:
+    """Run full OCR extraction and return structured result dict.
+
+    Returns None when OCR dependencies are not available.
+    """
+    if not OCR_AVAILABLE:
+        return None
+    result = extract_document(file_bytes, filename)
+    return result.to_dict()
+
 
 def extract_text_from_bytes(file_bytes: bytes, filename: str) -> str:
     text = file_bytes.decode('utf-8', errors='ignore')

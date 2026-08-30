@@ -16,11 +16,13 @@ import {
   getUploadedDocuments,
   removeUploadedDocument,
 } from "@/lib/uploaded-documents";
+import { createClient } from "@/lib/supabase/client";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
 type FileEntry = {
   id: string;
+  documentId?: string;
   file?: File;
   name: string;
   size: number;
@@ -37,11 +39,24 @@ const ALLOWED_TYPES = [
   "image/png",
   "image/jpeg",
   "image/jpg",
-  "image/gif",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "text/plain",
+  "image/webp",
 ];
+
+// Maps HTTP status codes from the backend to human-readable messages.
+function backendErrorMessage(status: number, body: string): string {
+  // Try to extract FastAPI's { "detail": "..." } payload first.
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed.detail) return String(parsed.detail);
+  } catch {
+    // body is not JSON — fall through
+  }
+  if (status === 413) return "File exceeds the 50 MB size limit.";
+  if (status === 415) return body || "This file type is not supported.";
+  if (status === 400) return body || "Invalid upload request.";
+  if (status >= 500) return `Server error (${status}). Please try again later.`;
+  return `Upload failed (HTTP ${status}).`;
+}
 
 function humanFileSize(bytes: number) {
   if (bytes === 0) return "0 B";
@@ -64,6 +79,17 @@ export default function UploadPage() {
   const entriesRef = useRef<FileEntry[]>([]);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+  // Retrieve the current Supabase access token (null if not logged in)
+  const getAccessToken = async (): Promise<string | null> => {
+    try {
+      const supabase = createClient();
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    } catch {
+      return null;
+    }
+  };
 
   // Keep a ref in sync so upload finalisation can read entry metadata.
   useEffect(() => {
@@ -89,10 +115,13 @@ export default function UploadPage() {
   };
 
   const validateFile = (f: File) => {
-    if (!ALLOWED_TYPES.includes(f.type) && !f.name.match(/\.(pdf|png|jpe?g|gif|docx?|txt)$/i)) {
-      return "Unsupported file type";
+    if (
+      !ALLOWED_TYPES.includes(f.type) &&
+      !f.name.match(/\.(pdf|png|jpe?g|webp)$/i)
+    ) {
+      return "Unsupported file type. Accepted: PDF, JPG, JPEG, PNG, WebP.";
     }
-    if (f.size > MAX_FILE_SIZE) return "File exceeds 50MB limit";
+    if (f.size > MAX_FILE_SIZE) return "File exceeds the 50 MB limit.";
     return null;
   };
 
@@ -134,9 +163,11 @@ export default function UploadPage() {
     ev.currentTarget.value = ""; // reset
   };
 
-  const startUpload = (id: string) => {
+  const startUpload = async (id: string) => {
     const entry = entriesRef.current.find((e) => e.id === id);
     if (!entry?.file) return;
+
+    const token = await getAccessToken();
 
     setEntries((prev) =>
       prev.map((e) => (e.id === id ? { ...e, status: "uploading", progress: 0 } : e))
@@ -154,6 +185,8 @@ export default function UploadPage() {
     const uploadUrl = `${API_BASE}/api/documents/upload`;
 
     xhr.open('POST', uploadUrl, true);
+    xhr.timeout = 60_000; // 60-second hard timeout
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable) {
@@ -177,7 +210,10 @@ export default function UploadPage() {
 
           const processResponse = await fetch(`${API_BASE}/api/documents/process`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
             body: JSON.stringify({ document_id: documentId }),
             signal: controller.signal,
           });
@@ -190,7 +226,7 @@ export default function UploadPage() {
           setEntries((prev) =>
             prev.map((e) =>
               e.id === id
-                ? { ...e, status: "success", progress: 100, uploadedAt, id: documentId }
+                ? { ...e, status: "success", progress: 100, uploadedAt, documentId }
                 : e
             )
           );
@@ -216,7 +252,7 @@ export default function UploadPage() {
           announce(`Processing failed for ${entry.name}`);
         }
       } else {
-        const errorMsg = `Upload failed (${xhr.status})`;
+        const errorMsg = backendErrorMessage(xhr.status, xhr.responseText);
         setEntries((prev) =>
           prev.map((e) =>
             e.id === id
@@ -224,7 +260,7 @@ export default function UploadPage() {
               : e
           )
         );
-        announce(`Upload failed for ${entry.name}`);
+        announce(`Upload failed for ${entry.name}: ${errorMsg}`);
       }
       delete abortControllersRef.current[id];
     };
@@ -234,11 +270,33 @@ export default function UploadPage() {
       setEntries((prev) =>
         prev.map((e) =>
           e.id === id
-            ? { ...e, status: "error", error: "Network error during upload" }
+            ? {
+                ...e,
+                status: "error",
+                error:
+                  "Cannot reach the server. Check that the backend is running and your connection is stable.",
+              }
             : e
         )
       );
       announce(`Upload failed for ${entry.name}`);
+      delete abortControllersRef.current[id];
+    };
+
+    xhr.ontimeout = () => {
+      if (controller.signal.aborted) return;
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.id === id
+            ? {
+                ...e,
+                status: "error",
+                error: "Upload timed out. The file may be too large or the server is busy.",
+              }
+            : e
+        )
+      );
+      announce(`Upload timed out for ${entry.name}`);
       delete abortControllersRef.current[id];
     };
 
@@ -264,11 +322,14 @@ export default function UploadPage() {
   };
 
   const removeEntry = (id: string) => {
+    const entry = entriesRef.current.find((e) => e.id === id);
+    const stableId = entry?.documentId ?? id;
+
     if (abortControllersRef.current[id]) {
       abortControllersRef.current[id].abort();
       delete abortControllersRef.current[id];
     }
-    removeUploadedDocument(id);
+    removeUploadedDocument(stableId);
     setEntries((prev) => prev.filter((e) => e.id !== id));
   };
 
@@ -288,7 +349,7 @@ export default function UploadPage() {
         <header className="mb-6">
           <h1 className="text-2xl font-semibold text-slate-900">Upload documents</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Drag and drop files here, or use the button to select. Supports PDF, images, Word and text files. Max 50MB per file.
+            Drag and drop files here, or use the button to select. Supports PDF, JPG, JPEG, PNG, and WebP. Max 50 MB per file.
           </p>
         </header>
 
@@ -406,7 +467,7 @@ export default function UploadPage() {
                             {e.status === 'success' && (
                               <div className="flex items-center gap-1 text-teal-700">
                                 <CheckCircle className="h-4 w-4" />
-                                <button title="View" onClick={() => router.push(`/documents/${e.id}`)} className="text-xs text-slate-700 hover:underline">View</button>
+                                <button title="View" onClick={() => router.push(`/documents/${e.documentId ?? e.id}`)} className="text-xs text-slate-700 hover:underline">View</button>
                                 <button title="Remove" onClick={() => removeEntry(e.id)} className="text-xs text-red-600 hover:underline">Remove</button>
                               </div>
                             )}

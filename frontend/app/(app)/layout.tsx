@@ -10,19 +10,22 @@ import { useSession } from "@/lib/session";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const user = useSession();
+  const { user, isLoading } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    if (!user) router.replace("/login");
-  }, [user, router]);
+    // Only redirect after the session check has completed.
+    if (!isLoading && !user) router.replace("/login");
+  }, [user, isLoading, router]);
 
   async function handleLogout() {
     await logout();
     router.replace("/login");
   }
 
-  if (!user) {
+  // Show a loading state while checking auth or when not authenticated.
+  // The middleware also protects routes server-side, so this is a client-side safety net.
+  if (isLoading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3 text-slate-400">

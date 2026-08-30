@@ -43,6 +43,7 @@ export function uploadFileXHR(file: File, url: string, onProgress?: UploadProgre
     form.append("file", file);
 
     xhr.open("POST", url, true);
+    xhr.timeout = 60_000;
 
     xhr.upload.onprogress = function (ev) {
       if (ev.lengthComputable) {
@@ -65,7 +66,11 @@ export function uploadFileXHR(file: File, url: string, onProgress?: UploadProgre
     };
 
     xhr.onerror = function () {
-      resolve({ success: false, error: "Network error" });
+      resolve({ success: false, error: "Cannot reach the server. Check that the backend is running and your connection is stable." });
+    };
+
+    xhr.ontimeout = function () {
+      resolve({ success: false, error: "Upload timed out. The file may be too large or the server is busy." });
     };
 
     xhr.send(form);

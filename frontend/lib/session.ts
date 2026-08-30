@@ -6,9 +6,11 @@ import type { MedCareUser } from "@/lib/auth";
 import { SESSION_EVENT, displayNameFromEmail } from "@/lib/auth";
 
 /**
- * Hook to get and watch the current authenticated user from Supabase
+ * Hook to get and watch the current authenticated user from Supabase.
+ * Returns both the user and a loading flag so consumers can distinguish
+ * "still checking auth" from "definitely not authenticated".
  */
-export function useSession(): MedCareUser | null {
+export function useSession(): { user: MedCareUser | null; isLoading: boolean } {
   const [user, setUser] = useState<MedCareUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -46,6 +48,7 @@ export function useSession(): MedCareUser | null {
       } else {
         setUser(null);
       }
+      setIsLoading(false);
 
       // Dispatch event for cross-tab awareness
       window.dispatchEvent(new Event(SESSION_EVENT));
@@ -64,5 +67,5 @@ export function useSession(): MedCareUser | null {
     };
   }, []);
 
-  return isLoading ? null : user;
+  return { user, isLoading };
 }

@@ -12,6 +12,7 @@ import DocumentCard from "@/components/DocumentCard";
 import { DEMO_DOCUMENTS, type DemoDocument } from "@/lib/demo-data";
 import { getAllDocuments } from "@/lib/uploaded-documents";
 import { KIND_LABELS } from "@/lib/document-constants";
+import { fetchDocuments, type BackendDocument } from "@/lib/api";
 
 const FILTER_OPTIONS = [
   { value: "all", label: "All documents" },
@@ -28,9 +29,39 @@ export default function DocumentsPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [allDocs, setAllDocs] = useState<DemoDocument[]>(DEMO_DOCUMENTS);
 
-  // Include demo-uploaded documents (persisted client-side) alongside the library.
+  // Merge demo documents, uploaded documents (localStorage), and backend documents
   useEffect(() => {
-    const update = () => setAllDocs(getAllDocuments());
+    const update = async () => {
+      // Start with local documents (demo + localStorage uploads)
+      const localDocs = getAllDocuments();
+
+      // Fetch backend documents
+      const backendDocs = await fetchDocuments();
+      const localIds = new Set(localDocs.map((d) => d.id));
+
+      // Convert backend docs to DemoDocument shape, skipping duplicates
+      const extraDocs: DemoDocument[] = [];
+      for (const bd of backendDocs) {
+        if (localIds.has(bd.id)) continue;
+        localIds.add(bd.id);
+        extraDocs.push({
+          id: bd.id,
+          name: bd.title,
+          kind: 'report',
+          date: bd.created_at
+            ? new Date(bd.created_at).toLocaleDateString('en-US', {
+                month: 'short', day: '2-digit', year: 'numeric',
+              })
+            : 'Recent',
+          pages: 1,
+          status: bd.processing_status === 'processed' ? 'processed' : 'processing',
+          flag: 'normal',
+        });
+      }
+
+      setAllDocs([...extraDocs, ...localDocs]);
+    };
+
     update();
     window.addEventListener("medcare-uploads-changed", update);
     window.addEventListener("storage", update);

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -16,10 +19,21 @@ from backend.app.document_pipeline import (
     classify_document_event,
     extract_metadata,
     extract_text_from_bytes,
+    extract_text_structured,
 )
 from backend.app.providers import build_provider
 from backend.app.rag import build_medical_answer, compare_reports
 from backend.app.storage import DocumentRecord, build_document_store
+from backend.app import supabase_service
+
+try:
+    from backend.app.ocr import OCR_AVAILABLE as _ocr_ok
+except ImportError:
+    _ocr_ok = False
+
+# Extensions the upload endpoint accepts.  Validated before any OCR work so
+# the client receives an immediate 415 rather than a silent empty document.
+_ALLOWED_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.webp'}
 
 app = FastAPI(title='MediCare AI Backend', version='0.1.0')
 
@@ -31,8 +45,21 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+logger = logging.getLogger(__name__)
+
 store = build_document_store(settings.upload_dir)
 provider = build_provider()
+
+# Initialise Supabase integration (no-ops if vars are absent)
+supabase_service.configure(
+    url=settings.supabase_url,
+    service_key=settings.supabase_service_key,
+    anon_key=settings.supabase_anon_key,
+)
+if supabase_service.is_available():
+    logger.info('Supabase integration is active')
+else:
+    logger.info('Supabase integration is not configured — using local store only')
 
 
 class HealthResponse(BaseModel):
@@ -46,6 +73,22 @@ class UploadResponse(BaseModel):
     title: str
     filename: str
     status: str
+    supabase_synced: bool = False
+
+
+class DocumentListItem(BaseModel):
+    id: str
+    title: str
+    filename: str
+    document_type: str | None = None
+    processing_status: str = 'processed'
+    created_at: str | None = None
+    chunks: int = 0
+
+
+class DocumentListResponse(BaseModel):
+    documents: list[DocumentListItem]
+    total: int
 
 
 class ProcessDocumentRequest(BaseModel):
@@ -57,11 +100,14 @@ class ProcessDocumentResponse(BaseModel):
     chunks: int
     metadata: dict[str, Any]
     processed: bool
+    ocr_details: dict[str, Any] | None = None
 
 
 class MedicalAnswerRequest(BaseModel):
     question: str = Field(..., min_length=1)
     documents: list[str] = Field(default_factory=list)
+    context: str = Field(default='', description='Optional raw text context from frontend (e.g. demo document details)')
+    history: list[dict[str, str]] = Field(default_factory=list, description='Conversation history [{role, content}]')
 
 
 class MedicalEvidence(BaseModel):
@@ -147,10 +193,36 @@ async def upload_document(
     if not file.filename:
         raise HTTPException(status_code=400, detail='A filename is required.')
 
+    # Validate file extension early — gives a clear 415 before any I/O.
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        allowed = ', '.join(sorted(_ALLOWED_EXTENSIONS))
+        raise HTTPException(
+            status_code=415,
+            detail=f'Unsupported file type "{ext or "(none)"}". Allowed types: {allowed}.',
+        )
+
     document_id = str(uuid.uuid4())
     contents = await file.read()
-    text = extract_text_from_bytes(contents, file.filename)
+    if len(contents) > 50 * 1024 * 1024:  # 50MB
+        raise HTTPException(status_code=413, detail='File too large. Maximum size is 50MB.')
+
+    # Extraction: use OCR pipeline when available, fall back to legacy extraction
+    ocr_result: dict[str, Any] | None = None
+    if _ocr_ok:
+        ocr_result = await asyncio.to_thread(extract_text_structured, contents, file.filename)
+        text = ocr_result['full_text'] if ocr_result else ''
+        # Fall back to legacy extraction when OCR returns empty (e.g. minimal/stub PDFs)
+        if not text:
+            text = extract_text_from_bytes(contents, file.filename)
+            ocr_result = None  # discard unhelpful OCR metadata
+    else:
+        text = extract_text_from_bytes(contents, file.filename)
+
     metadata = extract_metadata(file.filename, file.content_type or 'application/octet-stream')
+    if ocr_result:
+        metadata['ocr_details'] = ocr_result
+
     doc = DocumentRecord(
         document_id=document_id,
         title=title or file.filename,
@@ -164,11 +236,16 @@ async def upload_document(
         owner=current_user.email,
     )
     store.add(doc)
+
+    # Supabase sync (user_token obtained from auth dependency in a future refactor)
+    supabase_synced = False
+
     return {
         'document_id': document_id,
         'title': doc.title,
         'filename': doc.filename,
         'status': 'uploaded',
+        'supabase_synced': supabase_synced,
     }
 
 
@@ -242,6 +319,7 @@ async def process_document(
         'chunks': len(chunks),
         'metadata': document.metadata,
         'processed': True,
+        'ocr_details': document.metadata.get('ocr_details'),
     }
 
 
@@ -259,10 +337,18 @@ async def medical_answer(
         if document is not None and document.owner == current_user.email:
             docs.append(document)
 
-    if not docs:
-        raise HTTPException(status_code=404, detail='No matching documents were found for this request.')
+    if payload.documents and not docs and not payload.context:
+        raise HTTPException(
+            status_code=404,
+            detail='None of the referenced documents were found in the backend store. Upload documents first or provide context text.',
+        )
 
-    result = build_medical_answer(payload.question, docs)
+    result = build_medical_answer(
+        payload.question,
+        docs,
+        raw_context=payload.context or None,
+        conversation_history=payload.history,
+    )
     return result
 
 

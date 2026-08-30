@@ -56,6 +56,31 @@ class InMemoryDocumentStore:
                 continue
             self.documents[document.document_id] = document
 
+    def _load_persisted(self) -> int:
+        """Reload document JSON files written to base_dir on startup.
+        Returns the number of documents successfully restored."""
+        count = 0
+        for json_file in self.base_dir.glob('*.json'):
+            try:
+                data = json.loads(json_file.read_text(encoding='utf-8'))
+                doc = DocumentRecord(
+                    document_id=data['document_id'],
+                    title=data['title'],
+                    filename=data['filename'],
+                    content_type=data.get('content_type', 'application/octet-stream'),
+                    text=data.get('text', ''),
+                    chunks=data.get('chunks', []),
+                    metadata=data.get('metadata', {}),
+                    processed=data.get('processed', False),
+                    created_at=data.get('created_at', ''),
+                )
+                self.documents[doc.document_id] = doc
+                count += 1
+            except (json.JSONDecodeError, KeyError, OSError):
+                # Skip corrupted or incomplete files
+                continue
+        return count
+
     def add(self, document: DocumentRecord) -> None:
         self.documents[document.document_id] = document
         self.base_dir.joinpath(f"{document.document_id}.json").write_text(json.dumps({
@@ -85,4 +110,6 @@ class InMemoryDocumentStore:
 
 
 def build_document_store(base_dir: str | Path = './.uploads') -> InMemoryDocumentStore:
-    return InMemoryDocumentStore(base_dir)
+    store = InMemoryDocumentStore(base_dir)
+    store._load_persisted()
+    return store

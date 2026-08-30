@@ -29,7 +29,7 @@ export default function LoginPage() {
 function LoginCard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const session = useSession();
+  const { user: session } = useSession();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

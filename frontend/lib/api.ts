@@ -7,26 +7,62 @@ import {
   MedicalComparisonResponse,
   SymptomAnalysisRequest,
 } from '@/types/medical';
-import { compareMedicalReports, generateMedicalAnswer } from './medical-rag';
+import { compareMedicalReports } from './medical-rag';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+/**
+ * Return the current Supabase access token for authenticated backend requests.
+ * Returns null when Supabase isn't configured or the user isn't logged in.
+ */
+async function getAuthToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const { createClient } = await import('@/lib/supabase/client');
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Build a headers object with optional auth token. */
+async function authHeaders(extra?: Record<string, string>): Promise<Record<string, string>> {
+  const token = await getAuthToken();
+  const headers: Record<string, string> = { ...extra };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
 
 export async function uploadAndProcessDocument(file: File): Promise<MedicalDocumentRecord> {
   const formData = new FormData();
   formData.append('file', file);
 
+  const headers = await authHeaders();
+
   const uploadResponse = await fetch(`${API_BASE}/api/documents/upload`, {
     method: 'POST',
+    headers,
     body: formData,
   });
   if (!uploadResponse.ok) {
-    throw new Error(`Document upload failed: ${uploadResponse.statusText}`);
+    // Extract FastAPI detail message when present
+    let detail = `HTTP ${uploadResponse.status}`;
+    try {
+      const body = await uploadResponse.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      // non-JSON body — keep status code
+    }
+    throw new Error(`Document upload failed: ${detail}`);
   }
 
   const uploaded = await uploadResponse.json() as { document_id: string; title: string; filename: string };
+  const processHeaders = await authHeaders({ 'Content-Type': 'application/json' });
   const processResponse = await fetch(`${API_BASE}/api/documents/process`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: processHeaders,
     body: JSON.stringify({ document_id: uploaded.document_id }),
   });
   if (!processResponse.ok) {
@@ -65,19 +101,36 @@ export async function analyzeSymptoms(payload: SymptomAnalysisRequest): Promise<
 export async function askMedicalQuestion(
   payload: MedicalAnswerRequest,
 ): Promise<MedicalAnswerResponse> {
-  try {
-    const response = await fetch(`${API_BASE}/api/medical-answer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: payload.question, documents: payload.documents.map((document) => document.id) }),
-    });
-    if (!response.ok) {
-      return generateMedicalAnswer(payload);
-    }
-    return await response.json();
-  } catch {
-    return generateMedicalAnswer(payload);
+  const body: Record<string, unknown> = {
+    question: payload.question,
+    documents: payload.documents.map((d) => d.id),
+  };
+  if (payload.context && payload.context.length > 0) {
+    body.context = payload.context.join('\n\n');
   }
+  if (payload.history && payload.history.length > 0) {
+    body.history = payload.history;
+  }
+
+  const askHeaders = await authHeaders({ 'Content-Type': 'application/json' });
+  const response = await fetch(`${API_BASE}/api/medical-answer`, {
+    method: 'POST',
+    headers: askHeaders,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const parsed = await response.json();
+      if (parsed.detail) detail = parsed.detail;
+    } catch {
+      // non-JSON error body
+    }
+    throw new Error(detail);
+  }
+
+  return (await response.json()) as MedicalAnswerResponse;
 }
 
 export async function compareReports(
@@ -198,4 +251,46 @@ export async function fetchDocument(documentId: string): Promise<BackendDocument
     throw new Error(`Document request failed (${response.status} ${response.statusText}).`);
   }
   return (await response.json()) as BackendDocument;
+}
+
+// ── Document listing & detail (Supabase-aware) ─────────────────────────────────────
+
+export type BackendDocumentListItem = {
+  id: string;
+  title: string;
+  filename: string;
+  document_type: string | null;
+  processing_status: string;
+  created_at: string | null;
+  chunks: number;
+};
+
+export async function fetchDocuments(): Promise<BackendDocumentListItem[]> {
+  try {
+    const headers = await authHeaders();
+    const response = await fetch(`${API_BASE}/api/documents`, { headers });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return (data.documents ?? []) as BackendDocumentListItem[];
+  } catch {
+    return [];
+  }
+}
+
+export type BackendDocumentDetail = BackendDocumentListItem & {
+  text: string;
+  metadata: Record<string, unknown>;
+  processed: boolean;
+  source: 'local' | 'supabase';
+};
+
+export async function fetchDocumentDetail(documentId: string): Promise<BackendDocumentDetail | null> {
+  try {
+    const headers = await authHeaders();
+    const response = await fetch(`${API_BASE}/api/documents/${documentId}`, { headers });
+    if (!response.ok) return null;
+    return (await response.json()) as BackendDocumentDetail;
+  } catch {
+    return null;
+  }
 }

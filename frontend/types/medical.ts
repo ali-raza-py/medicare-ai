@@ -41,6 +41,8 @@ export interface MedicalEvidence {
 export interface MedicalAnswerRequest {
   question: string;
   documents: MedicalDocumentRecord[];
+  context?: string[];
+  history?: { role: 'user' | 'assistant'; content: string }[];
 }
 
 export interface MedicalAnswerResponse {

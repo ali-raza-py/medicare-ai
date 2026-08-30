@@ -17,7 +17,7 @@ export default function ResetPasswordPage() {
 
 function ResetPasswordCard() {
   const router = useRouter();
-  const session = useSession();
+  const { user: session } = useSession();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);

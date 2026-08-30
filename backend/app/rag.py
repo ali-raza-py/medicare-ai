@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backend.app.providers import build_provider
 from backend.app.storage import DocumentRecord
 
 
@@ -31,7 +32,14 @@ def retrieve_relevant_chunks(question: str, document: DocumentRecord) -> list[di
     return ranked
 
 
-def build_medical_answer(question: str, documents: list[DocumentRecord]) -> dict[str, Any]:
+def build_medical_answer(
+    question: str,
+    documents: list[DocumentRecord],
+    *,
+    raw_context: str | None = None,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Build a medical answer using RAG retrieval + Gemini (or local fallback)."""
     relevant: list[dict[str, Any]] = []
     for document in documents:
         for item in retrieve_relevant_chunks(question, document):
@@ -43,39 +51,188 @@ def build_medical_answer(question: str, documents: list[DocumentRecord]) -> dict
                 'section': 'clinical-note',
             })
 
-    if not relevant:
-        return {
-            'answer': 'The requested information was not found in the uploaded records. No relevant evidence was identified in the documents provided.',
-            'evidence': [],
-            'confidence': 'Low',
-            'sourceCount': 0,
-            'provider': 'local-mock-provider',
-            'model': 'synthetic-rag-v1',
+    evidence = [
+        {
+            'documentName': entry['document_name'],
+            'section': entry['section'],
+            'sourceId': entry['document_id'],
+            'snippet': entry['snippet'],
+            'score': entry['score'],
         }
+        for entry in relevant[:5]
+    ]
 
-    relevant.sort(key=lambda item: item['score'], reverse=True)
-    top = relevant[0]
-    answer = (
-        f"Based on the uploaded records, the most relevant evidence indicates: {top['snippet']}. "
-        "This summary is grounded in the patient record content and should be interpreted as information extracted from those records, not as a diagnosis or treatment recommendation."
+    # Build context lines from retrieved document chunks
+    context_lines = [
+        f"Document: {entry['document_name']}\nSection: {entry['section']}\nSnippet: {entry['snippet']}"
+        for entry in relevant[:5]
+    ]
+
+    # If raw context text was provided from the frontend, append it
+    if raw_context:
+        context_lines.append(f"Reference material:\n{raw_context}")
+
+    provider = build_provider()
+    has_provider = (
+        provider.config.provider.lower() != 'mock'
+        and provider.config.api_key
     )
+
+    if has_provider:
+        # Build system prompt based on whether we have evidence/context
+        if context_lines:
+            system_prompt = (
+                'You are a clinical question-answering assistant for the MediCare AI platform. '
+                'Answer the user question using only the supplied clinical evidence and reference material. '
+                'If the evidence does not contain the answer, say that it was not found in the provided records. '
+                'Keep the reply concise and clinically factual; do not diagnose or prescribe treatment.'
+            )
+        else:
+            system_prompt = (
+                'You are a clinical question-answering assistant for the MediCare AI platform. '
+                'Answer the user question accurately and concisely using general medical knowledge. '
+                'Clearly state when information should be verified with a healthcare provider. '
+                'Do not diagnose or prescribe treatment.'
+            )
+
+        # Format conversation history
+        history_text = ''
+        if conversation_history:
+            history_parts = []
+            for msg in conversation_history:
+                role = msg.get('role', '')
+                content = msg.get('content', '')
+                if role == 'user':
+                    history_parts.append(f"Previous question: {content}")
+                elif role == 'assistant':
+                    history_parts.append(f"Previous answer: {content}")
+            if history_parts:
+                history_text = '\n\n'.join(history_parts)
+
+        # Assemble the full prompt
+        prompt_parts = [system_prompt]
+        if history_text:
+            prompt_parts.append(f"Conversation history:\n{history_text}")
+        if context_lines:
+            prompt_parts.append(f"Question: {question}\n\nEvidence:\n" + '\n\n'.join(context_lines))
+        else:
+            prompt_parts.append(f"Question: {question}")
+
+        prompt = '\n\n'.join(prompt_parts)
+
+        try:
+            answer = provider.generate(prompt, context=context_lines if context_lines else None)
+            if answer and answer.strip():
+                return {
+                    'answer': answer.strip(),
+                    'evidence': evidence,
+                    'confidence': 'Medium' if len(evidence) >= 2 else ('Low' if evidence else 'Medium'),
+                    'sourceCount': len(evidence),
+                    'provider': provider.config.provider,
+                    'model': provider.config.model,
+                }
+        except Exception as exc:
+            # Provider call failed — fall through to context-based fallback
+            if context_lines:
+                return _context_fallback(question, evidence, raw_context)
+            return _ai_unavailable_response(question, provider, exc)
+
+    # No provider configured — use raw context if available
+    if context_lines:
+        return _context_fallback(question, evidence, raw_context)
+
+    return _no_evidence_response(question, provider)
+
+
+def _context_fallback(
+    question: str,
+    evidence: list[dict[str, Any]],
+    raw_context: str | None = None,
+) -> dict[str, Any]:
+    """Return a context-based response when the AI provider is unavailable."""
+    parts: list[str] = []
+
+    if evidence:
+        evidence_text = '; '.join(
+            e['snippet'][:150] for e in evidence[:3]
+        )
+        parts.append(
+            f"Based on the uploaded records, the most relevant evidence indicates: {evidence_text}."
+        )
+
+    if raw_context:
+        excerpt = raw_context[:500] + ('...' if len(raw_context) > 500 else '')
+        parts.append(f"Reference material excerpt:\n{excerpt}")
+
+    if parts:
+        parts.append(
+            'Note: The AI provider is currently unavailable, so this is an automated extraction. '
+            'Please consult your healthcare provider for clinical interpretation.'
+        )
+        answer = '\n\n'.join(parts)
+    else:
+        answer = (
+            'The AI provider is currently unavailable and no relevant evidence could be '
+            'extracted from the provided records. Please try again later or consult your '
+            'healthcare provider.'
+        )
 
     return {
         'answer': answer,
-        'evidence': [
-            {
-                'documentName': entry['document_name'],
-                'section': entry['section'],
-                'sourceId': entry['document_id'],
-                'snippet': entry['snippet'],
-                'score': entry['score'],
-            }
-            for entry in relevant[:5]
-        ],
-        'confidence': 'Medium' if len(relevant) >= 2 else 'Low',
-        'sourceCount': len(relevant[:5]),
-        'provider': 'local-mock-provider',
-        'model': 'synthetic-rag-v1',
+        'evidence': evidence,
+        'confidence': 'Low',
+        'sourceCount': len(evidence),
+        'provider': 'fallback',
+        'model': 'context-extract',
+    }
+
+
+def _no_evidence_response(question: str, provider: 'AIProvider') -> dict[str, Any]:
+    """Return a 'not found' response when no evidence or context is available."""
+    return {
+        'answer': (
+            'The requested information was not found in the uploaded records and no '
+            'additional context was provided. Please upload relevant medical documents '
+            'or rephrase your question.'
+        ),
+        'evidence': [],
+        'confidence': 'Low',
+        'sourceCount': 0,
+        'provider': provider.config.provider if provider else 'unknown',
+        'model': provider.config.model if provider else 'unknown',
+    }
+
+
+def _ai_unavailable_response(
+    question: str,
+    provider: 'AIProvider',
+    exc: Exception,
+) -> dict[str, Any]:
+    """Return a helpful response when the AI provider is unreachable (e.g. bad API key)."""
+    error_hint = ''
+    exc_str = str(exc).lower()
+    if 'unauthenticated' in exc_str or '401' in exc_str or 'api key' in exc_str:
+        error_hint = (
+            ' The AI service could not be authenticated — please verify the '
+            'MEDICARE_AI_API_KEY environment variable contains a valid Google AI Studio key '
+            '(keys starting with "AIza...").'
+        )
+    elif 'quota' in exc_str or '429' in exc_str:
+        error_hint = ' The AI service quota has been exceeded. Please try again later.'
+    return {
+        'answer': (
+            f'The AI assistant is temporarily unavailable and could not process your question: '
+            f'"{question}".{error_hint}'
+            f'\n\nIn the meantime, you can:\n'
+            f'- Upload relevant medical documents and re-ask with document context\n'
+            f'- Check your API key configuration\n'
+            f'- Try again in a few moments'
+        ),
+        'evidence': [],
+        'confidence': 'Low',
+        'sourceCount': 0,
+        'provider': provider.config.provider if provider else 'unknown',
+        'model': f'{provider.config.model if provider else "unknown"} (unavailable)',
     }
 
 
