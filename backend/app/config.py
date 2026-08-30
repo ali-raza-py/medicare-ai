@@ -14,6 +14,7 @@ class Settings:
     ai_model: str = os.getenv("MEDICARE_AI_MODEL", "mock-model")
     ai_api_key: str | None = os.getenv("MEDICARE_AI_API_KEY")
     upload_dir: str = os.getenv("MEDICARE_UPLOAD_DIR", "./.uploads")
+    jwt_secret: str | None = os.getenv("MEDICARE_JWT_SECRET")
 
 
 settings = Settings()

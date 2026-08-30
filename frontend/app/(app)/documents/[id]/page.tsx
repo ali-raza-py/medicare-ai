@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowLeftRight,
   CalendarDays,
+  FileText,
   Sparkles,
 } from "lucide-react";
 import {
@@ -24,6 +26,99 @@ import {
   KIND_ICONS,
   KIND_LABELS,
 } from "@/lib/document-constants";
+import { fetchDocument, type BackendDocument } from "@/lib/api";
+
+type BackendState =
+  | { status: "loading" }
+  | { status: "found"; document: BackendDocument }
+  | { status: "missing" };
+
+function BackendDocumentView({ document }: { document: BackendDocument }) {
+  const created = new Date(document.created_at);
+  const createdLabel = Number.isNaN(created.getTime())
+    ? document.created_at
+    : created.toLocaleString();
+
+  return (
+    <div className="mx-auto w-full max-w-6xl space-y-6">
+      <Link
+        href="/documents"
+        className="inline-flex items-center gap-2 text-sm font-medium text-teal-700 hover:text-teal-800 transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to documents
+      </Link>
+
+      <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/10 to-cyan-500/10 backdrop-blur-xl p-6 shadow-lg">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20 text-slate-700 backdrop-blur-sm border border-white/20">
+            <FileText className="h-6 w-6" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent break-words">
+              {document.title}
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarDays className="h-4 w-4" />
+                {createdLabel}
+              </span>
+              <span className="text-slate-400">·</span>
+              <span className="rounded-full bg-white/40 px-2.5 py-1 text-xs font-medium text-slate-700 backdrop-blur-sm border border-white/20">
+                {document.processed ? "Processed" : "Uploaded"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/20 bg-white/40 backdrop-blur-xl p-6 shadow-lg">
+        <h3 className="text-sm font-semibold text-slate-900">Extracted text</h3>
+        <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-700">
+          {document.text || "No readable text was extracted from this document."}
+        </p>
+      </section>
+
+      <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/10 to-cyan-500/10 p-6 shadow-lg backdrop-blur-xl">
+        <h3 className="text-sm font-semibold text-slate-900">Details</h3>
+        <dl className="mt-4 space-y-3 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-slate-600">Document ID</dt>
+            <dd className="font-medium text-slate-900 break-all text-right">{document.document_id}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-slate-600">Filename</dt>
+            <dd className="font-medium text-slate-900 break-all text-right">{document.filename}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-slate-600">Content type</dt>
+            <dd className="font-medium text-slate-900">{document.content_type}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-slate-600">Chunks</dt>
+            <dd className="font-medium text-slate-900">{document.chunks}</dd>
+          </div>
+        </dl>
+        <div className="mt-4 space-y-3">
+          <Link
+            href="/ask"
+            className="group flex items-center gap-3 rounded-xl border border-white/20 bg-gradient-to-r from-teal-600/90 to-cyan-600/90 p-3.5 text-white shadow-md transition-all duration-300 hover:shadow-xl hover:scale-[1.02]"
+          >
+            <Sparkles className="h-5 w-5 shrink-0" />
+            <span className="text-sm font-medium">Ask MediCare AI about this report</span>
+          </Link>
+          <Link
+            href="/compare"
+            className="group flex items-center gap-3 rounded-xl border border-white/20 bg-white/50 p-3.5 text-slate-900 shadow-md transition-all duration-300 hover:bg-white/60 hover:shadow-xl hover:scale-[1.02]"
+          >
+            <ArrowLeftRight className="h-5 w-5 shrink-0 text-teal-700" />
+            <span className="text-sm font-medium">Compare with an earlier report</span>
+          </Link>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 export default function DocumentDetailPage() {
   const params = useParams<{ id: string }>();
@@ -34,7 +129,38 @@ export default function DocumentDetailPage() {
     ? undefined
     : getUploadedDocuments().find((d) => d.id === id);
 
+  // Unknown locally: it may be a real backend document (e.g. a Timeline
+  // deep-link), so look it up before declaring it missing.
+  const [backend, setBackend] = useState<BackendState>({ status: "loading" });
+  useEffect(() => {
+    if (demoDoc || uploaded || !id) return;
+    let cancelled = false;
+    setBackend({ status: "loading" });
+    fetchDocument(id)
+      .then((document) => {
+        if (!cancelled) setBackend({ status: "found", document });
+      })
+      .catch(() => {
+        if (!cancelled) setBackend({ status: "missing" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, demoDoc, uploaded]);
+
   if (!demoDoc && !uploaded) {
+    if (backend.status === "loading") {
+      return (
+        <div className="mx-auto w-full max-w-6xl" role="status" aria-live="polite">
+          <div className="rounded-2xl border border-white/20 bg-white/40 backdrop-blur-xl p-12 text-center shadow-lg text-sm text-slate-600">
+            Loading document…
+          </div>
+        </div>
+      );
+    }
+    if (backend.status === "found") {
+      return <BackendDocumentView document={backend.document} />;
+    }
     return (
       <div className="mx-auto w-full max-w-6xl">
         <div className="rounded-2xl border border-white/20 bg-white/40 backdrop-blur-xl p-12 text-center shadow-lg">

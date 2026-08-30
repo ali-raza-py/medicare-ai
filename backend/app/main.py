@@ -4,12 +4,19 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from backend.app.auth import AuthUser, get_auth_user
 from backend.app.config import settings
-from backend.app.document_pipeline import chunk_text, extract_metadata, extract_text_from_bytes
+from backend.app.document_pipeline import (
+    build_event_description,
+    chunk_text,
+    classify_document_event,
+    extract_metadata,
+    extract_text_from_bytes,
+)
 from backend.app.providers import build_provider
 from backend.app.rag import build_medical_answer, compare_reports
 from backend.app.storage import DocumentRecord, build_document_store
@@ -74,6 +81,20 @@ class MedicalAnswerResponse(BaseModel):
     model: str | None = None
 
 
+class TimelineEvent(BaseModel):
+    id: str
+    date: str
+    title: str
+    type: str
+    description: str
+    documentId: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TimelineResponse(BaseModel):
+    events: list[TimelineEvent]
+
+
 class CompareRequest(BaseModel):
     leftReport: str = Field(..., min_length=1)
     rightReport: str = Field(..., min_length=1)
@@ -85,6 +106,18 @@ class CompareRow(BaseModel):
     currentValue: str
     changeType: str
     detail: str
+
+
+class DocumentDetailResponse(BaseModel):
+    document_id: str
+    title: str
+    filename: str
+    content_type: str
+    text: str
+    chunks: int
+    metadata: dict[str, Any]
+    processed: bool
+    created_at: str
 
 
 class CompareResponse(BaseModel):
@@ -106,7 +139,11 @@ def health() -> dict[str, str]:
 
 
 @app.post('/api/documents/upload', response_model=UploadResponse)
-async def upload_document(file: UploadFile = File(...), title: str | None = None) -> dict[str, str]:
+async def upload_document(
+    file: UploadFile = File(...),
+    title: str | None = None,
+    current_user: AuthUser = Depends(get_auth_user),
+) -> dict[str, str]:
     if not file.filename:
         raise HTTPException(status_code=400, detail='A filename is required.')
 
@@ -124,6 +161,7 @@ async def upload_document(file: UploadFile = File(...), title: str | None = None
         metadata=metadata,
         processed=False,
         created_at=datetime.now(timezone.utc).isoformat(),
+        owner=current_user.email,
     )
     store.add(doc)
     return {
@@ -134,11 +172,65 @@ async def upload_document(file: UploadFile = File(...), title: str | None = None
     }
 
 
+@app.get('/api/documents/{document_id}', response_model=DocumentDetailResponse)
+def get_document(
+    document_id: str,
+    current_user: AuthUser = Depends(get_auth_user),
+) -> dict[str, Any]:
+    """Real stored document record, used by the Documents detail page when a
+    Timeline deep-link points at a backend document."""
+    document = store.get(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail='Document not found.')
+    if document.owner != current_user.email:
+        raise HTTPException(status_code=403, detail='Access denied.')
+    return {
+        'document_id': document.document_id,
+        'title': document.title,
+        'filename': document.filename,
+        'content_type': document.content_type,
+        'text': document.text,
+        'chunks': len(document.chunks),
+        'metadata': document.metadata,
+        'processed': document.processed,
+        'created_at': document.created_at,
+    }
+
+
+@app.get('/api/documents', response_model=list[DocumentDetailResponse])
+def list_documents(
+    current_user: AuthUser = Depends(get_auth_user),
+) -> list[dict[str, Any]]:
+    """List the authenticated user's stored documents, newest first."""
+    documents = []
+    for document in store.list():
+        if document.owner != current_user.email:
+            continue
+        documents.append({
+            'document_id': document.document_id,
+            'title': document.title,
+            'filename': document.filename,
+            'content_type': document.content_type,
+            'text': document.text,
+            'chunks': len(document.chunks),
+            'metadata': document.metadata,
+            'processed': document.processed,
+            'created_at': document.created_at,
+        })
+    documents.sort(key=lambda d: d['created_at'], reverse=True)
+    return documents
+
+
 @app.post('/api/documents/process', response_model=ProcessDocumentResponse)
-async def process_document(payload: ProcessDocumentRequest) -> dict[str, Any]:
+async def process_document(
+    payload: ProcessDocumentRequest,
+    current_user: AuthUser = Depends(get_auth_user),
+) -> dict[str, Any]:
     document = store.get(payload.document_id)
     if document is None:
         raise HTTPException(status_code=404, detail='Document not found.')
+    if document.owner != current_user.email:
+        raise HTTPException(status_code=403, detail='Access denied.')
 
     chunks = chunk_text(document.text)
     document.chunks = chunks
@@ -154,14 +246,17 @@ async def process_document(payload: ProcessDocumentRequest) -> dict[str, Any]:
 
 
 @app.post('/api/medical-answer', response_model=MedicalAnswerResponse)
-async def medical_answer(payload: MedicalAnswerRequest) -> dict[str, Any]:
+async def medical_answer(
+    payload: MedicalAnswerRequest,
+    current_user: AuthUser = Depends(get_auth_user),
+) -> dict[str, Any]:
     if not payload.documents:
         raise HTTPException(status_code=400, detail='At least one document is required to answer questions.')
 
     docs: list[DocumentRecord] = []
     for document_id in payload.documents:
         document = store.get(document_id)
-        if document is not None:
+        if document is not None and document.owner == current_user.email:
             docs.append(document)
 
     if not docs:
@@ -174,6 +269,38 @@ async def medical_answer(payload: MedicalAnswerRequest) -> dict[str, Any]:
 @app.post('/api/compare-reports', response_model=CompareResponse)
 async def compare_reports_endpoint(payload: CompareRequest) -> dict[str, Any]:
     return compare_reports(payload.leftReport, payload.rightReport)
+
+
+@app.get('/api/timeline', response_model=TimelineResponse)
+def timeline(
+    current_user: AuthUser = Depends(get_auth_user),
+) -> dict[str, Any]:
+    """Chronological timeline derived from the real uploaded documents in the
+    store belonging to the authenticated user. One event per document; only
+    information that actually exists on the record is exposed."""
+    events = []
+    for document in store.list():
+        if document.owner != current_user.email:
+            continue
+        event_type = classify_document_event(document.filename, document.text)
+        metadata = {
+            'filename': document.filename,
+            'content_type': document.content_type,
+            'file_type': document.metadata.get('file_type'),
+            'processed': document.processed,
+        }
+        metadata = {key: value for key, value in metadata.items() if value is not None}
+        events.append(TimelineEvent(
+            id=f"evt-{document.document_id}",
+            date=document.created_at,
+            title=document.title,
+            type=event_type,
+            description=build_event_description(document.text),
+            documentId=document.document_id,
+            metadata=metadata,
+        ))
+    events.sort(key=lambda event: event.date, reverse=True)
+    return {'events': [event.model_dump() for event in events]}
 
 
 @app.get('/')

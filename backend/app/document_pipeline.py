@@ -7,21 +7,9 @@ from typing import Any
 
 def extract_text_from_bytes(file_bytes: bytes, filename: str) -> str:
     text = file_bytes.decode('utf-8', errors='ignore')
-    if text and ('%PDF' in text or '%%EOF' in text):
-        return _synthetic_pdf_text(filename, text)
     if not text.strip():
         return 'No readable text detected in the uploaded file.'
     return text
-
-
-def _synthetic_pdf_text(filename: str, raw_text: str) -> str:
-    if 'blood pressure' in raw_text.lower() or 'hba1c' in raw_text.lower():
-        return 'Blood pressure 122/78. HbA1c 6.4%. Medication: Metformin. Follow-up note: lifestyle plan reviewed.'
-    if 'cholesterol' in raw_text.lower():
-        return 'Cholesterol 178 mg/dL. LDL 96 mg/dL. HDL 52 mg/dL.'
-    if 'diet' in raw_text.lower() or 'nutrition' in raw_text.lower():
-        return 'Diet recommendations: increase vegetable intake and hydration. Follow-up: continue exercise routine.'
-    return 'Clinical note: routine follow-up report reviewed. Summary: patient is stable and follow-up recommended.'
 
 
 def extract_metadata(filename: str, content_type: str) -> dict[str, Any]:
@@ -31,6 +19,32 @@ def extract_metadata(filename: str, content_type: str) -> dict[str, Any]:
         'file_type': 'pdf' if filename.lower().endswith('.pdf') else 'image',
         'extracted_at': datetime.now(timezone.utc).isoformat(),
     }
+
+
+def classify_document_event(filename: str, text: str) -> str:
+    """Map a stored document to a Timeline event type using only what the
+    document actually contains (filename + extracted text). Defaults to
+    'Medical Report' rather than guessing a type the data doesn't support."""
+    haystack = f"{filename} {text}".lower()
+    if any(word in haystack for word in ('x-ray', 'xray', 'ultrasound', 'mri', 'ct scan', 'imaging', 'radiology')):
+        return 'Imaging'
+    if any(word in haystack for word in ('hba1c', 'cholesterol', 'blood count', 'cbc', 'lipid', 'glucose', 'serum', 'panel', 'vitamin d')):
+        return 'Lab Result'
+    if any(word in haystack for word in ('prescription', 'medication', 'metformin', 'dosage')):
+        return 'Medication'
+    if any(word in haystack for word in ('diagnosis', 'diagnosed')):
+        return 'Diagnosis'
+    return 'Medical Report'
+
+
+def build_event_description(text: str, limit: int = 240) -> str:
+    """Honest, real extract: the beginning of the document's extracted text."""
+    cleaned = re.sub(r'\s+', ' ', text).strip()
+    if not cleaned or cleaned == 'No readable text detected in the uploaded file.':
+        return 'No readable text could be extracted from this document.'
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[:limit].rsplit(' ', 1)[0] + '…'
 
 
 def chunk_text(text: str, *, chunk_size: int = 200) -> list[str]:

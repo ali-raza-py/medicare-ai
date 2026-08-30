@@ -17,6 +17,7 @@ class DocumentRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
     processed: bool = False
     created_at: str = ""
+    owner: str | None = None
 
 
 class InMemoryDocumentStore:
@@ -25,6 +26,35 @@ class InMemoryDocumentStore:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.documents: dict[str, DocumentRecord] = {}
         self.index: dict[str, list[str]] = {}
+        self._load_existing()
+
+    def _load_existing(self) -> None:
+        """Load previously persisted document JSON files from disk on startup."""
+        for path in sorted(self.base_dir.glob("*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            try:
+                document = DocumentRecord(
+                    document_id=str(data.get("document_id") or ""),
+                    title=str(data.get("title") or ""),
+                    filename=str(data.get("filename") or ""),
+                    content_type=str(data.get("content_type") or "application/octet-stream"),
+                    text=str(data.get("text") or ""),
+                    chunks=list(data.get("chunks") or []),
+                    metadata=dict(data.get("metadata") or {}),
+                    processed=bool(data.get("processed", False)),
+                    created_at=str(data.get("created_at") or ""),
+                    owner=data.get("owner"),
+                )
+            except (TypeError, ValueError):
+                continue
+            if not document.document_id:
+                continue
+            self.documents[document.document_id] = document
 
     def add(self, document: DocumentRecord) -> None:
         self.documents[document.document_id] = document
@@ -38,6 +68,7 @@ class InMemoryDocumentStore:
             'metadata': document.metadata,
             'processed': document.processed,
             'created_at': document.created_at,
+            'owner': document.owner,
         }, ensure_ascii=False), encoding='utf-8')
 
     def get(self, document_id: str) -> DocumentRecord | None:
