@@ -2,8 +2,15 @@
 from __future__ import annotations
 
 import io
+import os
 
 import pytest
+
+# Use a dedicated test-only JWT secret so the suite is deterministic and never
+# depends on the real secret from the root .env. This runs BEFORE
+# backend.app.main is imported by test modules, so backend.app.config picks it
+# up (load_dotenv does not override variables that are already set).
+os.environ.setdefault("MEDICARE_JWT_SECRET", "test-jwt-secret-for-pytest-only-32bytes!")
 
 
 @pytest.fixture(scope="session")
@@ -149,3 +156,4 @@ def blank_image_bytes() -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+

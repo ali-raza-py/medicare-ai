@@ -73,6 +73,10 @@ class InMemoryDocumentStore:
                     metadata=data.get('metadata', {}),
                     processed=data.get('processed', False),
                     created_at=data.get('created_at', ''),
+                    # Restore ownership so /api/timeline and the document
+                    # endpoints keep filtering by the authenticated user's
+                    # email after a backend restart.
+                    owner=data.get("owner"),
                 )
                 self.documents[doc.document_id] = doc
                 count += 1

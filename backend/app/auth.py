@@ -49,7 +49,17 @@ def get_auth_user(
     # temporary fallback so the app remains usable.
     if settings.jwt_secret:
         try:
-            payload = decode(token, settings.jwt_secret, algorithms=['HS256'], options={'require': ['sub']})
+            # Supabase access tokens carry an 'aud' claim (e.g.
+            # "authenticated"). PyJWT >= 2.10 rejects tokens that have an
+            # 'aud' claim when no audience is passed to decode(), so audience
+            # verification is disabled explicitly: authorization here is
+            # based on 'sub'/'email', never on the audience claim.
+            payload = decode(
+                token,
+                settings.jwt_secret,
+                algorithms=['HS256'],
+                options={'require': ['sub'], 'verify_aud': False},
+            )
         except PyJWTError:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
     else:
@@ -60,7 +70,7 @@ def get_auth_user(
         try:
             payload = decode(
                 token,
-                options={'verify_signature': False, 'require': ['sub']},
+                options={'verify_signature': False, 'require': ['sub'], 'verify_aud': False},
                 algorithms=['HS256'],
             )
         except PyJWTError:

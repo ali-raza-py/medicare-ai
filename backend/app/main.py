@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -187,7 +187,7 @@ def health() -> dict[str, str]:
 @app.post('/api/documents/upload', response_model=UploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
-    title: str | None = None,
+    title: str | None = Form(default=None),
     current_user: AuthUser = Depends(get_auth_user),
 ) -> dict[str, str]:
     if not file.filename:
