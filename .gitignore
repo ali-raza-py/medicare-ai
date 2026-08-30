@@ -10,6 +10,13 @@
 !.yarn/releases
 !.yarn/versions
 
+# python
+__pycache__/
+*.py[cod]
+
+# backend runtime document store (contains uploaded document content)
+/.uploads/
+
 # testing
 /coverage
 

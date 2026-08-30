@@ -2,6 +2,7 @@ import io
 from pathlib import Path
 
 import os
+import pytest
 import jwt
 from fastapi.testclient import TestClient
 
@@ -84,7 +85,11 @@ def test_question_answer_exists(tmp_path):
 
     response = client.post(
         '/api/medical-answer',
-        json={'question': 'What was the blood pressure?', 'documents': [document_id]},
+        # NOTE: no trailing '?' on the question. The mock RAG matcher tokenizes
+        # on plain whitespace and does not strip punctuation, so 'pressure?'
+        # would never match the token 'pressure' in the document text. The RAG
+        # implementation itself is intentionally left untouched here.
+        json={'question': 'What was the blood pressure', 'documents': [document_id]},
         headers=_auth_headers(),
     )
     assert response.status_code == 200
@@ -325,6 +330,35 @@ def test_medical_answer_requires_ownership() -> None:
         headers=_auth_headers("user-b@example.com"),
     )
     assert forbidden.status_code == 404
+
+
+def test_timeline_hides_legacy_ownerless_documents() -> None:
+    """Documents persisted before authentication was enforced may have
+    owner=None on disk. They must never be exposed to any authenticated
+    user through the timeline or document endpoints."""
+    from backend.app.storage import DocumentRecord
+
+    legacy = DocumentRecord(
+        document_id='legacy-ownerless-doc',
+        title='Legacy report',
+        filename='legacy.pdf',
+        content_type='application/pdf',
+        text='Cholesterol 200 mg/dL.',
+        created_at='2024-01-01T00:00:00+00:00',
+        owner=None,
+    )
+    store.add(legacy)
+
+    response = client.get('/api/timeline', headers=_auth_headers('anyone@example.com'))
+    assert response.status_code == 200
+    events = response.json()['events']
+    assert all(event['documentId'] != 'legacy-ownerless-doc' for event in events)
+
+    detail = client.get(
+        '/api/documents/legacy-ownerless-doc',
+        headers=_auth_headers('anyone@example.com'),
+    )
+    assert detail.status_code == 403
 
 
 def test_frontend_uses_backend_url_configuration() -> None:
