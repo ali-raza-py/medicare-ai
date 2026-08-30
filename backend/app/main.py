@@ -328,9 +328,6 @@ async def medical_answer(
     payload: MedicalAnswerRequest,
     current_user: AuthUser = Depends(get_auth_user),
 ) -> dict[str, Any]:
-    if not payload.documents:
-        raise HTTPException(status_code=400, detail='At least one document is required to answer questions.')
-
     docs: list[DocumentRecord] = []
     for document_id in payload.documents:
         document = store.get(document_id)
@@ -343,7 +340,8 @@ async def medical_answer(
             detail='None of the referenced documents were found in the backend store. Upload documents first or provide context text.',
         )
 
-    result = build_medical_answer(
+    result = await asyncio.to_thread(
+        build_medical_answer,
         payload.question,
         docs,
         raw_context=payload.context or None,
@@ -354,7 +352,7 @@ async def medical_answer(
 
 @app.post('/api/compare-reports', response_model=CompareResponse)
 async def compare_reports_endpoint(payload: CompareRequest) -> dict[str, Any]:
-    return compare_reports(payload.leftReport, payload.rightReport)
+    return await asyncio.to_thread(compare_reports, payload.leftReport, payload.rightReport)
 
 
 @app.get('/api/timeline', response_model=TimelineResponse)

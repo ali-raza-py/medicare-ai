@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from backend.app.providers import build_provider
 from backend.app.storage import DocumentRecord
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_text(value: str) -> str:
@@ -121,7 +124,7 @@ def build_medical_answer(
         prompt = '\n\n'.join(prompt_parts)
 
         try:
-            answer = provider.generate(prompt, context=context_lines if context_lines else None)
+            answer = provider.generate(prompt)
             if answer and answer.strip():
                 return {
                     'answer': answer.strip(),
@@ -133,6 +136,7 @@ def build_medical_answer(
                 }
         except Exception as exc:
             # Provider call failed — fall through to context-based fallback
+            logger.warning('AI provider call failed: %s', exc)
             if context_lines:
                 return _context_fallback(question, evidence, raw_context)
             return _ai_unavailable_response(question, provider, exc)
@@ -214,8 +218,7 @@ def _ai_unavailable_response(
     if 'unauthenticated' in exc_str or '401' in exc_str or 'api key' in exc_str:
         error_hint = (
             ' The AI service could not be authenticated — please verify the '
-            'MEDICARE_AI_API_KEY environment variable contains a valid Google AI Studio key '
-            '(keys starting with "AIza...").'
+            'MEDICARE_AI_API_KEY environment variable contains a valid API key.'
         )
     elif 'quota' in exc_str or '429' in exc_str:
         error_hint = ' The AI service quota has been exceeded. Please try again later.'
