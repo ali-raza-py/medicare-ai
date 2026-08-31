@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowLeftRight,
   CalendarDays,
@@ -38,18 +39,27 @@ export default function DocumentDetailPage() {
     ? undefined
     : getUploadedDocuments().find((d) => d.id === id);
 
-  // If this is not a built-in demo document, always try the backend so the
-  // real processed record (text, status, timestamps) is shown for uploads.
+  // The backend record is the source of truth: ALWAYS fetch it for non-demo
+  // documents, even when localStorage metadata exists. localStorage only
+  // knows name/size/type — never the extracted text or processing status.
   const [backendDoc, setBackendDoc] = useState<BackendDocumentDetail | null>(null);
-  const [loading, setLoading] = useState(!demoDoc);
+  const [loading, setLoading] = useState(!demoDoc && !!id);
 
   useEffect(() => {
-    if (!demoDoc && id) {
-      fetchDocumentDetail(id).then((doc) => {
-        setBackendDoc(doc);
-        setLoading(false);
-      });
+    if (demoDoc || !id) {
+      setLoading(false);
+      return;
     }
+    let cancelled = false;
+    setLoading(true);
+    fetchDocumentDetail(id).then((doc) => {
+      if (cancelled) return;
+      setBackendDoc(doc);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [demoDoc, id]);
 
   // Ignore a backend record that belongs to a previously-viewed document so
@@ -91,15 +101,15 @@ export default function DocumentDetailPage() {
     ?? (visibleBackendDoc
       ? {
           id: visibleBackendDoc.id,
-          name: visibleBackendDoc.title,
+          name: visibleBackendDoc.title || visibleBackendDoc.filename,
           kind: 'report' as const,
           date: visibleBackendDoc.created_at
             ? new Date(visibleBackendDoc.created_at).toLocaleDateString('en-US', {
                 month: 'short', day: '2-digit', year: 'numeric',
               })
             : 'Recent',
-          pages: 1,
-          status: visibleBackendDoc.processed ? 'processed' as const : 'processing' as const,
+          pages: visibleBackendDoc.page_count ?? 1,
+          status: visibleBackendDoc.status as 'processed' | 'processing' | 'failed',
           flag: 'normal' as const,
         }
       : uploaded
@@ -116,13 +126,14 @@ export default function DocumentDetailPage() {
             flag: 'normal' as const,
           });
 
+  // Real extracted text from the backend when it has the document;
+  // localStorage-only entries (uploaded before backend integration) keep the
+  // honest notice — no invented content.
   const detail: DemoDocumentDetail | undefined = demoDoc
     ? DEMO_DOCUMENT_DETAILS[doc.id]
     : visibleBackendDoc
       ? {
-          summary: visibleBackendDoc.text
-            ? visibleBackendDoc.text.slice(0, 1000) + (visibleBackendDoc.text.length > 1000 ? '...' : '')
-            : 'Document uploaded and processed. No extracted text available.',
+          summary: visibleBackendDoc.text || 'No extracted text available.',
           extractedAt: visibleBackendDoc.created_at
             ? new Date(visibleBackendDoc.created_at).toLocaleString()
             : 'just now',
@@ -199,16 +210,43 @@ export default function DocumentDetailPage() {
             AI-extracted findings
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            {demoDoc
-              ? "Synthetic demo extraction"
-              : "Extracted from your document"}{" "}
+            {visibleBackendDoc
+              ? "Real OCR extraction"
+              : "Synthetic demo extraction"}{" "}
             · {detail?.extractedAt ?? "not yet processed"}
           </p>
 
+          {visibleBackendDoc?.status === 'failed' && (
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+              <div>
+                <p className="text-sm font-medium text-red-800">
+                  Text extraction failed
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-red-700">
+                  {visibleBackendDoc.error_message ||
+                    "OCR could not extract any readable text from this document."}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {visibleBackendDoc && visibleBackendDoc.status !== 'failed' && !visibleBackendDoc.text && (
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-amber-600" />
+              <p className="text-sm leading-relaxed text-amber-800">
+                This document is still being processed. Extracted text will
+                appear here once OCR completes.
+              </p>
+            </div>
+          )}
+
           {detail?.summary && (
-            <p className="mt-4 text-sm leading-relaxed text-slate-700">
+            <pre
+              className="mt-4 max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-white/20 bg-white/60 p-4 font-sans text-sm leading-relaxed text-slate-700"
+            >
               {detail.summary}
-            </p>
+            </pre>
           )}
 
           {detail?.values && detail.values.length > 0 ? (

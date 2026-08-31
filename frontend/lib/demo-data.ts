@@ -15,7 +15,7 @@ export type DemoDocument = {
   kind: "lab" | "imaging" | "report";
   date: string;
   pages: number;
-  status: "processed" | "processing";
+  status: "processed" | "processing" | "failed";
   flag: "normal" | "attention" | "high";
 };
 

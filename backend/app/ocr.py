@@ -67,9 +67,9 @@ try:
 except ImportError:
     _HELPERS_AVAILABLE = False
 
-# OCR is available when pymupdf is present (real PDF text extraction).
-# PaddleOCR is optional — scanned-page OCR degrades gracefully without it.
-OCR_AVAILABLE = _PYMUPDF_AVAILABLE
+# OCR is available when any real extraction backend is present: PyMuPDF for
+# native PDF text, or PaddleOCR for images and scanned PDF pages.
+OCR_AVAILABLE = _PYMUPDF_AVAILABLE or _PADDLE_AVAILABLE
 
 _MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
@@ -283,7 +283,7 @@ def _parse_ocr_result(raw_result) -> tuple[str, float, list[OCRBoxResult]]:
 # ---------------------------------------------------------------------------
 
 def _extract_pdf(file_bytes: bytes) -> OCRDocumentResult:
-    """Extract text from a PDF using native text first, falling back to OCR."""
+    """Extract text from a PDF: native text first, then PaddleOCR for scans."""
     errors: list[str] = []
     pages: list[OCRPageResult] = []
 
@@ -315,53 +315,46 @@ def _extract_pdf(file_bytes: bytes) -> OCRDocumentResult:
             native_count += 1
             continue
 
-        # Fall back to OCR — render page at 300 DPI
-        if not _PADDLE_AVAILABLE or not _HELPERS_AVAILABLE:
-            # No PaddleOCR — keep whatever native text we got (may be empty)
-            pages.append(OCRPageResult(
-                page_number=page_number,
-                text=native_text,
-                confidence=1.0 if native_text else 0.0,
-                boxes=[],
-                method='native',
-            ))
-            native_count += 1
-            continue
-        try:
-            pixmap = page.get_pixmap(dpi=300)
-            img_array = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
-                (pixmap.height, pixmap.width, pixmap.n),
-            )
-            # Convert RGBA to RGB if needed
-            if pixmap.n == 4:
-                img_array = img_array[:, :, :3]
+        # PaddleOCR attempt — render page at 300 DPI
+        if _PADDLE_AVAILABLE and _HELPERS_AVAILABLE:
+            try:
+                pixmap = page.get_pixmap(dpi=300)
+                img_array = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+                    (pixmap.height, pixmap.width, pixmap.n),
+                )
+                # Convert RGBA to RGB if needed
+                if pixmap.n == 4:
+                    img_array = img_array[:, :, :3]
 
-            engine = _get_ocr_engine()
-            if _PADDLE_V3:
-                raw_result = list(engine.predict(img_array))
-            else:
-                raw_result = engine.ocr(img_array, cls=True)
-            text, confidence, boxes = _parse_ocr_result(raw_result)
+                engine = _get_ocr_engine()
+                if _PADDLE_V3:
+                    raw_result = list(engine.predict(img_array))
+                else:
+                    raw_result = engine.ocr(img_array, cls=True)
+                text, confidence, boxes = _parse_ocr_result(raw_result)
 
-            pages.append(OCRPageResult(
-                page_number=page_number,
-                text=text,
-                confidence=confidence,
-                boxes=boxes,
-                method='ocr',
-            ))
-            ocr_count += 1
-        except Exception as exc:
-            logger.warning('OCR failed on page %d: %s', page_number, exc)
-            errors.append(f'OCR failed on page {page_number}: {exc}')
-            pages.append(OCRPageResult(
-                page_number=page_number,
-                text='',
-                confidence=0.0,
-                boxes=[],
-                method='ocr',
-            ))
-            ocr_count += 1
+                pages.append(OCRPageResult(
+                    page_number=page_number,
+                    text=text,
+                    confidence=confidence,
+                    boxes=boxes,
+                    method='ocr',
+                ))
+                ocr_count += 1
+                continue
+            except Exception as exc:
+                logger.warning('PaddleOCR failed on page %d: %s', page_number, exc)
+                errors.append(f'PaddleOCR failed on page {page_number}: {exc}')
+
+        # No backend produced text — keep whatever native text we got (may be empty)
+        pages.append(OCRPageResult(
+            page_number=page_number,
+            text=native_text,
+            confidence=1.0 if native_text else 0.0,
+            boxes=[],
+            method='native',
+        ))
+        native_count += 1
 
     doc.close()
 
@@ -397,50 +390,53 @@ def _extract_pdf(file_bytes: bytes) -> OCRDocumentResult:
 # Image extraction
 # ---------------------------------------------------------------------------
 
-def _extract_image(file_bytes: bytes) -> OCRDocumentResult:
+def _extract_image(file_bytes: bytes, filename: str) -> OCRDocumentResult:
     """Extract text from an image file using PaddleOCR."""
     errors: list[str] = []
 
-    if not _PADDLE_AVAILABLE or not _HELPERS_AVAILABLE:
-        return _empty_result(['PaddleOCR not available — image OCR requires paddleocr + numpy + Pillow'])
-
-    try:
-        img = Image.open(io.BytesIO(file_bytes))
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        img_array = np.array(img)
-    except Exception as exc:
-        logger.error('Failed to open image: %s', exc)
-        return _empty_result([f'Failed to open image: {exc}'])
-
-    try:
-        engine = _get_ocr_engine()
-        if _PADDLE_V3:
-            raw_result = list(engine.predict(img_array))
+    # PaddleOCR path (local / Render deployments)
+    if _PADDLE_AVAILABLE and _HELPERS_AVAILABLE:
+        try:
+            img = Image.open(io.BytesIO(file_bytes))
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img_array = np.array(img)
+        except Exception as exc:
+            logger.error('Failed to open image: %s', exc)
+            errors.append(f'Failed to open image: {exc}')
         else:
-            raw_result = engine.ocr(img_array, cls=True)
-        text, confidence, boxes = _parse_ocr_result(raw_result)
-    except Exception as exc:
-        logger.error('PaddleOCR failed on image: %s', exc)
-        return _empty_result([f'OCR processing failed: {exc}'])
+            try:
+                engine = _get_ocr_engine()
+                if _PADDLE_V3:
+                    raw_result = list(engine.predict(img_array))
+                else:
+                    raw_result = engine.ocr(img_array, cls=True)
+                text, confidence, boxes = _parse_ocr_result(raw_result)
+                if text.strip():
+                    return OCRDocumentResult(
+                        pages=[OCRPageResult(
+                            page_number=1,
+                            text=text,
+                            confidence=confidence,
+                            boxes=boxes,
+                            method='ocr',
+                        )],
+                        full_text=text,
+                        page_count=1,
+                        average_confidence=confidence,
+                        extraction_method='ocr_image',
+                        processing_time_ms=0.0,  # caller fills this in
+                        errors=errors,
+                    )
+                # Paddle found no text — an honest failure, not a fake success.
+                errors.append('PaddleOCR returned no text for this image')
+            except Exception as exc:
+                logger.error('PaddleOCR failed on image: %s', exc)
+                errors.append(f'PaddleOCR failed: {exc}')
+    elif not _PADDLE_AVAILABLE:
+        errors.append('PaddleOCR not available in this environment')
 
-    page = OCRPageResult(
-        page_number=1,
-        text=text,
-        confidence=confidence,
-        boxes=boxes,
-        method='ocr',
-    )
-
-    return OCRDocumentResult(
-        pages=[page],
-        full_text=text,
-        page_count=1,
-        average_confidence=confidence,
-        extraction_method='ocr_image',
-        processing_time_ms=0.0,  # caller fills this in
-        errors=errors,
-    )
+    return _empty_result(errors or ['No OCR backend could extract text from this image'])
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +474,7 @@ def extract_document(file_bytes: bytes, filename: str) -> OCRDocumentResult:
         if ext in _PDF_EXTENSIONS:
             result = _extract_pdf(file_bytes)
         elif ext in _IMAGE_EXTENSIONS:
-            result = _extract_image(file_bytes)
+            result = _extract_image(file_bytes, filename)
         else:
             elapsed = (time.perf_counter() - start) * 1000
             return _empty_result(

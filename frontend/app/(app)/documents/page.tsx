@@ -54,7 +54,14 @@ export default function DocumentsPage() {
               })
             : 'Recent',
           pages: 1,
-          status: bd.processing_status === 'processed' ? 'processed' : 'processing',
+          // Honest state mapping: a failed document must never show as
+          // perpetually "processing".
+          status:
+            bd.processing_status === 'failed'
+              ? 'failed'
+              : bd.processing_status === 'processed'
+                ? 'processed'
+                : 'processing',
           flag: 'normal',
         });
       }

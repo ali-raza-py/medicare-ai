@@ -4,8 +4,25 @@ import Link from "next/link";
 import type { DemoDocument } from "@/lib/demo-data";
 import { KIND_ICONS, FLAG_LABELS, FLAG_STYLES } from "@/lib/document-constants";
 
+// Honest processing-state chip, shown only when a document is not fully
+// processed. 'failed' documents must be visibly different from healthy ones.
+const STATUS_CHIP_STYLES: Record<string, string> = {
+  failed:
+    "bg-red-50 text-red-700 border-red-200",
+  processing:
+    "bg-amber-50 text-amber-700 border-amber-200",
+  uploaded:
+    "bg-slate-50 text-slate-600 border-slate-200",
+};
+const STATUS_CHIP_LABELS: Record<string, string> = {
+  failed: "Extraction failed",
+  processing: "Processing…",
+  uploaded: "Queued",
+};
+
 export default function DocumentCard({ doc }: { doc: DemoDocument }) {
   const KindIcon = KIND_ICONS[doc.kind];
+  const chipStyle = STATUS_CHIP_STYLES[doc.status];
 
   // Gradient based on document type
   const gradientClass = {
@@ -38,6 +55,13 @@ export default function DocumentCard({ doc }: { doc: DemoDocument }) {
             <p className="text-xs text-slate-600">
               {doc.pages} page{doc.pages > 1 ? "s" : ""}
             </p>
+            {chipStyle && (
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${chipStyle}`}
+              >
+                {STATUS_CHIP_LABELS[doc.status]}
+              </span>
+            )}
           </div>
         </div>
 

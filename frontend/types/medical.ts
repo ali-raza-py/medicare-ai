@@ -25,7 +25,7 @@ export interface MedicalDocumentRecord {
   title: string;
   type: string;
   date: string;
-  status?: 'Ready' | 'Needs review';
+  status?: 'Ready' | 'Needs review' | 'Extraction failed';
   summary: string;
   content?: string;
 }

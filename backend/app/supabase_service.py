@@ -26,14 +26,22 @@ _SUPABASE_SERVICE_KEY: str | None = None
 _SUPABASE_ANON_KEY: str | None = None
 _service_client: Any | None = None
 
+# Optional documents-table columns introduced by
+# supabase/migrations/0001_documents_processing_columns.sql. Probed lazily and
+# cached so the backend keeps working (without error details) when the
+# migration has not been applied yet.
+_optional_document_columns: set[str] | None = None
+
 
 def configure(url: str | None, service_key: str | None, anon_key: str | None) -> None:
     """Initialise module-level Supabase settings. Called once at backend startup."""
     global _SUPABASE_URL, _SUPABASE_SERVICE_KEY, _SUPABASE_ANON_KEY, _service_client
+    global _optional_document_columns
     _SUPABASE_URL = url or None
     _SUPABASE_SERVICE_KEY = service_key or None
     _SUPABASE_ANON_KEY = anon_key or None
     _service_client = None
+    _optional_document_columns = None
 
     if _SUPABASE_URL and _SUPABASE_SERVICE_KEY and _create_client:
         try:
@@ -94,6 +102,37 @@ def get_user_id_from_token(user_token: str | None) -> str | None:
 # ── Document CRUD ────────────────────────────────────────────────────────
 
 
+# Optional columns managed by the migration; written only when present.
+_OPTIONAL_COLUMNS = ('error_message', 'page_count', 'ocr_metadata')
+
+
+def _known_optional_columns() -> set[str]:
+    """Probe which optional documents columns exist (cached after first call)."""
+    global _optional_document_columns
+    if _optional_document_columns is not None:
+        return _optional_document_columns
+    present: set[str] = set()
+    client = _get_client()
+    if client is not None:
+        for column in _OPTIONAL_COLUMNS:
+            try:
+                client.table('documents').select(column).limit(0).execute()
+                present.add(column)
+            except Exception:
+                pass
+    _optional_document_columns = present
+    if present:
+        logger.info('documents table optional columns present: %s', sorted(present))
+    else:
+        logger.info(
+            'documents table lacks optional columns %s — run '
+            'supabase/migrations/0001_documents_processing_columns.sql for '
+            'full extraction details',
+            list(_OPTIONAL_COLUMNS),
+        )
+    return _optional_document_columns
+
+
 def save_document(
     *,
     user_id: str | None,
@@ -101,8 +140,11 @@ def save_document(
     file_name: str,
     document_type: str,
     extracted_text: str = '',
-    processing_status: str = 'completed',
+    processing_status: str = 'uploaded',
     storage_path: str | None = None,
+    error_message: str | None = None,
+    page_count: int | None = None,
+    ocr_metadata: dict[str, Any] | None = None,
     user_token: str | None = None,
 ) -> dict[str, Any] | None:
     """Insert or update a document record in the Supabase `documents` table."""
@@ -123,6 +165,13 @@ def save_document(
         # storage_path is NOT NULL in the schema; default to a deterministic
         # path under the document id when no file upload was performed.
         row['storage_path'] = storage_path or f"{document_id}/{file_name}"
+        optional = _known_optional_columns()
+        if 'error_message' in optional and error_message is not None:
+            row['error_message'] = error_message
+        if 'page_count' in optional and page_count is not None:
+            row['page_count'] = page_count
+        if 'ocr_metadata' in optional and ocr_metadata is not None:
+            row['ocr_metadata'] = ocr_metadata
 
         # Use upsert so re-processing updates the existing row. Note: without a
         # Prefer: return=representation header the response carries no data, so
@@ -132,6 +181,45 @@ def save_document(
     except Exception as exc:
         logger.warning('Supabase save_document failed: %s', exc)
         return None
+
+
+def update_document(
+    document_id: str,
+    *,
+    user_id: str | None = None,
+    **fields: Any,
+) -> bool:
+    """Update specific columns on an existing document row.
+
+    Used for the honest status transitions (uploaded → processing →
+    processed/failed) after the initial insert. Returns True when the update
+    executed without error. Unknown/absent columns are dropped silently.
+    """
+    client = _get_client()
+    if not client:
+        return False
+
+    allowed = {
+        'processing_status', 'extracted_text', 'storage_path', 'file_name',
+        'document_type',
+    } | set(_OPTIONAL_COLUMNS)
+    row = {key: value for key, value in fields.items() if key in allowed and value is not None}
+    optional = _known_optional_columns()
+    for column in _OPTIONAL_COLUMNS:
+        if column in row and column not in optional:
+            row.pop(column)
+    if not row:
+        return False
+
+    try:
+        query = client.table('documents').update(row)
+        if user_id:
+            query = query.eq('user_id', user_id)
+        query.eq('id', document_id).execute()
+        return True
+    except Exception as exc:
+        logger.warning('Supabase update_document failed: %s', exc)
+        return False
 
 
 def get_document_record(

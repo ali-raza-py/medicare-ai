@@ -9,6 +9,11 @@ try:
 except ImportError:
     OCR_AVAILABLE = False
 
+# Sentinel returned by the legacy byte-decode fallback when a file contains
+# no readable text. Callers treat this exact string as "extraction failed" —
+# it must never be persisted as extracted text.
+NO_READABLE_TEXT = 'No readable text detected in the uploaded file.'
+
 
 def extract_text_structured(file_bytes: bytes, filename: str) -> dict | None:
     """Run full OCR extraction and return structured result dict.
@@ -21,15 +26,40 @@ def extract_text_structured(file_bytes: bytes, filename: str) -> dict | None:
     return result.to_dict()
 
 
+def summarize_ocr_details(ocr_result: dict[str, Any]) -> dict[str, Any]:
+    """Slim down an OCR result dict for database persistence.
+
+    Keeps page-level information (numbers, methods, confidence, sizes) but
+    drops per-box coordinates and page texts — the full text is already
+    persisted in `extracted_text`, so this avoids storing it twice.
+    """
+    pages = ocr_result.get('pages') or []
+    return {
+        'extraction_method': ocr_result.get('extraction_method'),
+        'page_count': ocr_result.get('page_count'),
+        'average_confidence': ocr_result.get('average_confidence'),
+        'processing_time_ms': ocr_result.get('processing_time_ms'),
+        'pages': [
+            {
+                'page_number': page.get('page_number'),
+                'method': page.get('method'),
+                'confidence': page.get('confidence'),
+                'char_count': len(str(page.get('text') or '')),
+            }
+            for page in pages
+        ],
+    }
+
+
 def extract_text_from_bytes(file_bytes: bytes, filename: str) -> str:
     text = file_bytes.decode('utf-8', errors='ignore')
     if not text.strip():
-        return 'No readable text detected in the uploaded file.'
+        return NO_READABLE_TEXT
     # Binary files (images, scanned PDFs) decode to garbage; only keep the raw
     # decode when it is overwhelmingly printable text (e.g. stub/plain-text PDFs).
     printable = sum(1 for ch in text if ch.isprintable() or ch in '\n\r\t')
     if printable / max(len(text), 1) < 0.9:
-        return 'No readable text detected in the uploaded file.'
+        return NO_READABLE_TEXT
     return text
 
 
@@ -61,7 +91,7 @@ def classify_document_event(filename: str, text: str) -> str:
 def build_event_description(text: str, limit: int = 240) -> str:
     """Honest, real extract: the beginning of the document's extracted text."""
     cleaned = re.sub(r'\s+', ' ', text).strip()
-    if not cleaned or cleaned == 'No readable text detected in the uploaded file.':
+    if not cleaned or cleaned == NO_READABLE_TEXT:
         return 'No readable text could be extracted from this document.'
     if len(cleaned) <= limit:
         return cleaned

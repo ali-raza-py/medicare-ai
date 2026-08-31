@@ -457,7 +457,8 @@ def test_build_medical_answer_uses_live_provider(monkeypatch):
 
 
 def test_upload_real_pdf():
-    """Upload a real PDF and verify real text extraction."""
+    """Upload a real PDF — extraction runs synchronously during the upload and
+    the response already carries the honest final status."""
     import pymupdf
 
     doc = pymupdf.open()
@@ -478,24 +479,32 @@ def test_upload_real_pdf():
     )
     assert response.status_code == 200
     data = response.json()
-    assert data['status'] == 'uploaded'
+    assert data['status'] == 'processed'
+    assert data['page_count'] == 1
     doc_id = data['document_id']
 
-    # Process the document
+    # Processing an already-extracted document is idempotent.
     response = client.post('/api/documents/process', json={'document_id': doc_id}, headers=_auth_headers())
     assert response.status_code == 200
     process_data = response.json()
     assert process_data['processed'] is True
     assert process_data['chunks'] > 0
+    assert process_data['status'] == 'processed'
 
 
 def test_upload_image_document():
-    """Upload a PNG image and verify OCR processing."""
+    """Upload a PNG image — real PaddleOCR runs during the upload, the document
+    ends 'processed', and the extracted text is retrievable afterwards."""
     from PIL import Image, ImageDraw
 
-    img = Image.new('RGB', (400, 200), 'white')
+    img = Image.new('RGB', (800, 300), 'white')
     draw = ImageDraw.Draw(img)
-    draw.text((20, 20), "Patient: Jane Smith\nBlood Pressure: 130/85", fill='black')
+    draw.text(
+        (20, 20),
+        "Patient: Jane Smith\nBlood Pressure: 130/85",
+        fill='black',
+        font_size=48,
+    )
     buf = io.BytesIO()
     img.save(buf, format='PNG')
     image_bytes = buf.getvalue()
@@ -508,7 +517,12 @@ def test_upload_image_document():
     )
     assert response.status_code == 200
     data = response.json()
-    assert data['status'] == 'uploaded'
+    assert data['status'] == 'processed'
+
+    # The extracted text must be retrievable from the document detail API.
+    detail = client.get(f"/api/documents/{data['document_id']}", headers=_auth_headers())
+    assert detail.status_code == 200
+    assert '130' in detail.json()['text']
 
 
 # ---------------------------------------------------------------------------

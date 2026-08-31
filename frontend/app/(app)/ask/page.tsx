@@ -47,14 +47,19 @@ const toMedicalDocumentRecord = (doc: {
   name: string;
   kind?: string;
   date?: string;
-  status?: "processed" | "processing";
+  status?: "processed" | "processing" | "failed";
   flag?: string;
 }): MedicalDocumentRecord => ({
   id: doc.id,
   title: doc.name,
   type: doc.kind ?? "report",
   date: doc.date ?? new Date().toISOString().slice(0, 10),
-  status: doc.status === "processing" ? "Needs review" : "Ready",
+  status:
+    doc.status === "failed"
+      ? "Extraction failed"
+      : doc.status === "processing"
+        ? "Needs review"
+        : "Ready",
   summary: "Relevant patient record document loaded for question answering.",
 });
 
@@ -63,7 +68,12 @@ const backendToMedicalDocumentRecord = (doc: BackendDocumentListItem): MedicalDo
   title: doc.title,
   type: doc.document_type ?? "report",
   date: doc.created_at ? doc.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
-  status: doc.processing_status === "processing" ? "Needs review" : "Ready",
+  status:
+    doc.processing_status === "failed"
+      ? "Extraction failed"
+      : doc.processing_status === "processing"
+        ? "Needs review"
+        : "Ready",
   summary: "Relevant patient record document loaded for question answering.",
 });
 
@@ -310,6 +320,10 @@ export default function AskPage() {
   const buildContext = (): string[] => {
     const parts: string[] = [];
     for (const doc of selectedDocuments) {
+      // For real backend documents the server already holds the extracted OCR text
+      // and will inject it via RAG retrieval — no frontend context needed.
+      // For demo documents (doc-001 etc.) we still attach the hardcoded details
+      // so the AI has something to work with even without a backend record.
       const detail = DEMO_DOCUMENT_DETAILS[doc.id];
       if (detail) {
         const lines = [
@@ -328,6 +342,8 @@ export default function AskPage() {
         }
         parts.push(lines.join("\n"));
       } else {
+        // Real backend document — just send its ID; the backend resolves the
+        // full record with extracted text and performs chunk retrieval.
         parts.push(`Document: ${doc.title} (${doc.type}, ${doc.date})`);
       }
     }

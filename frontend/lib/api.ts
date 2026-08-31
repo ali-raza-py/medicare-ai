@@ -62,15 +62,35 @@ export async function uploadAndProcessDocument(file: File): Promise<MedicalDocum
     throw new Error(`Document upload failed: ${detail}`);
   }
 
-  const uploaded = await uploadResponse.json() as { document_id: string; title: string; filename: string };
-  const processHeaders = await authHeaders({ 'Content-Type': 'application/json' });
-  const processResponse = await fetch(`${API_BASE}/api/documents/process`, {
-    method: 'POST',
-    headers: processHeaders,
-    body: JSON.stringify({ document_id: uploaded.document_id }),
-  });
-  if (!processResponse.ok) {
-    throw new Error(`Document processing failed: ${processResponse.statusText}`);
+  // The backend runs OCR synchronously during the upload, so the response
+  // already carries the honest final state — surface failures instead of
+  // pretending every upload was processed.
+  const uploaded = await uploadResponse.json() as {
+    document_id: string;
+    title: string;
+    filename: string;
+    status?: string;
+    error_message?: string | null;
+  };
+  if (uploaded.status === 'failed') {
+    throw new Error(
+      uploaded.error_message ||
+        'OCR could not extract any readable text from this document.',
+    );
+  }
+
+  // Only call the process endpoint when the upload response was not final
+  // (e.g. a future async backend). Already-extracted documents need nothing.
+  if (uploaded.status !== 'processed') {
+    const processHeaders = await authHeaders({ 'Content-Type': 'application/json' });
+    const processResponse = await fetch(`${API_BASE}/api/documents/process`, {
+      method: 'POST',
+      headers: processHeaders,
+      body: JSON.stringify({ document_id: uploaded.document_id }),
+    });
+    if (!processResponse.ok) {
+      throw new Error(`Document processing failed: ${processResponse.statusText}`);
+    }
   }
 
   return {
@@ -254,7 +274,7 @@ export type BackendDocument = {
 // network failure so callers can show honest states.
 export async function fetchDocument(documentId: string): Promise<BackendDocument> {
   const response = await fetch(`${API_BASE}/api/documents/${encodeURIComponent(documentId)}`, {
-    headers: { Accept: 'application/json' },
+    headers: await authHeaders({ Accept: 'application/json' }),
     cache: 'no-store',
   });
   if (!response.ok) {
@@ -273,7 +293,18 @@ export type BackendDocumentListItem = {
   processing_status: string;
   created_at: string | null;
   chunks: number;
+  error_message?: string | null;
 };
+
+// The honest backend state machine: uploaded → processing → processed | failed.
+const VALID_PROCESSING_STATUSES = ['uploaded', 'processing', 'processed', 'failed'];
+
+function normalizeProcessingStatus(raw: unknown): string {
+  if (typeof raw !== 'string') return 'processing';
+  const value = raw.trim().toLowerCase();
+  if (value === 'completed') return 'processed'; // legacy value
+  return VALID_PROCESSING_STATUSES.includes(value) ? value : 'processing';
+}
 
 // Normalize one record from GET /api/documents into the shape the UI uses.
 // The backend returns bare detail records keyed by `document_id` /
@@ -290,9 +321,13 @@ function normalizeDocumentListItem(raw: unknown): BackendDocumentListItem | null
         : null;
   if (!id) return null;
 
-  let processingStatus = 'processed';
-  if (typeof item.processing_status === 'string') {
-    processingStatus = item.processing_status;
+  // Prefer the explicit honest `status` field; fall back to
+  // `processing_status`, then the legacy `processed` boolean.
+  let processingStatus: string | null = null;
+  if (typeof item.status === 'string') {
+    processingStatus = normalizeProcessingStatus(item.status);
+  } else if (typeof item.processing_status === 'string') {
+    processingStatus = normalizeProcessingStatus(item.processing_status);
   } else if (typeof item.processed === 'boolean') {
     processingStatus = item.processed ? 'processed' : 'processing';
   }
@@ -307,9 +342,10 @@ function normalizeDocumentListItem(raw: unknown): BackendDocumentListItem | null
         : typeof item.content_type === 'string'
           ? item.content_type
           : null,
-    processing_status: processingStatus,
+    processing_status: processingStatus ?? 'processing',
     created_at: typeof item.created_at === 'string' ? item.created_at : null,
     chunks: typeof item.chunks === 'number' ? item.chunks : 0,
+    error_message: typeof item.error_message === 'string' ? item.error_message : null,
   };
 }
 
@@ -340,6 +376,8 @@ export type BackendDocumentDetail = BackendDocumentListItem & {
   text: string;
   metadata: Record<string, unknown>;
   processed: boolean;
+  status: string;
+  page_count?: number | null;
   source: 'local' | 'supabase';
 };
 
@@ -364,6 +402,8 @@ export async function fetchDocumentDetail(documentId: string): Promise<BackendDo
           ? (record.metadata as Record<string, unknown>)
           : {},
       processed: record.processed === true,
+      status: normalizeProcessingStatus(record.status ?? record.processing_status),
+      page_count: typeof record.page_count === 'number' ? record.page_count : null,
       source: 'local',
     };
   } catch {

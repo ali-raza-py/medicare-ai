@@ -207,7 +207,50 @@ export default function UploadPage() {
           const result = JSON.parse(xhr.responseText);
           const documentId = result.document_id;
 
-          // Now call the process endpoint
+          // The backend runs OCR synchronously during the upload, so the
+          // response already carries the honest final state.
+          if (result.status === 'failed') {
+            // Upload succeeded but OCR failed — surface the real reason
+            // instead of pretending the document was processed.
+            const reason: string =
+              result.error_message ||
+              'OCR could not extract any readable text from this document.';
+            setEntries((prev) =>
+              prev.map((e) =>
+                e.id === id
+                  ? { ...e, status: "error", error: reason, documentId, progress: 100 }
+                  : e
+              )
+            );
+            announce(`Text extraction failed for ${entry.name}`);
+            delete abortControllersRef.current[id];
+            return;
+          }
+
+          if (result.status === 'processed') {
+            // Extraction already finished during the upload — done.
+            const uploadedAt = new Date().toISOString();
+            setEntries((prev) =>
+              prev.map((e) =>
+                e.id === id
+                  ? { ...e, status: "success", progress: 100, uploadedAt, documentId }
+                  : e
+              )
+            );
+            addUploadedDocument({
+              id: documentId,
+              name: entry.name,
+              size: entry.size,
+              type: entry.type,
+              uploadedAt,
+            });
+            announce(`Uploaded and processed ${entry.name}`);
+            delete abortControllersRef.current[id];
+            return;
+          }
+
+          // Non-final status (future async backend) — poll the process
+          // endpoint until the document reaches a final state.
           setEntries((prev) =>
             prev.map((e) => (e.id === id ? { ...e, progress: 95 } : e))
           );
@@ -224,6 +267,14 @@ export default function UploadPage() {
 
           if (!processResponse.ok) {
             throw new Error(`Processing failed: ${processResponse.statusText}`);
+          }
+
+          const processData = await processResponse.json();
+          if (processData.status === 'failed') {
+            throw new Error(
+              processData.error_message ||
+                'OCR could not extract any readable text from this document.'
+            );
           }
 
           const uploadedAt = new Date().toISOString();
