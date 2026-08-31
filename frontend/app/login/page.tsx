@@ -50,10 +50,18 @@ function LoginCard() {
     }
   }, [callbackError, router]);
 
-  // Already signed in? Go straight to the dashboard.
+  // Return the user to the protected page they originally requested. The
+  // middleware appends ?next=<original path> when it redirects to /login.
+  const rawNext = searchParams.get("next");
+  const nextPath =
+    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
+      ? rawNext
+      : "/dashboard";
+
+  // Already signed in? Go straight to the target page.
   useEffect(() => {
-    if (session) router.replace("/dashboard");
-  }, [session, router]);
+    if (session) router.replace(nextPath);
+  }, [session, router, nextPath]);
 
   function switchMode(next: Mode) {
     setMode(next);
@@ -101,11 +109,11 @@ function LoginCard() {
           setConfirmPassword("");
           setMode("signin");
         } else {
-          router.replace("/dashboard");
+          router.replace(nextPath);
         }
       } else {
         await login(email.trim(), password);
-        router.replace("/dashboard");
+        router.replace(nextPath);
       }
     } catch (error) {
       setErrors({

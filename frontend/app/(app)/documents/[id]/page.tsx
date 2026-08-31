@@ -38,18 +38,23 @@ export default function DocumentDetailPage() {
     ? undefined
     : getUploadedDocuments().find((d) => d.id === id);
 
-  // If neither demo nor uploaded, try fetching from backend
+  // If this is not a built-in demo document, always try the backend so the
+  // real processed record (text, status, timestamps) is shown for uploads.
   const [backendDoc, setBackendDoc] = useState<BackendDocumentDetail | null>(null);
-  const [loading, setLoading] = useState(!demoDoc && !uploaded);
+  const [loading, setLoading] = useState(!demoDoc);
 
   useEffect(() => {
-    if (!demoDoc && !uploaded && id) {
+    if (!demoDoc && id) {
       fetchDocumentDetail(id).then((doc) => {
         setBackendDoc(doc);
         setLoading(false);
       });
     }
-  }, [demoDoc, uploaded, id]);
+  }, [demoDoc, id]);
+
+  // Ignore a backend record that belongs to a previously-viewed document so
+  // stale data is never flashed when navigating between detail pages.
+  const visibleBackendDoc = backendDoc && backendDoc.id === id ? backendDoc : null;
 
   if (loading) {
     return (
@@ -60,7 +65,7 @@ export default function DocumentDetailPage() {
     );
   }
 
-  if (!demoDoc && !uploaded && !backendDoc) {
+  if (!demoDoc && !uploaded && !visibleBackendDoc) {
     return (
       <div className="mx-auto w-full max-w-6xl">
         <div className="rounded-2xl border border-white/20 bg-white/40 backdrop-blur-xl p-12 text-center shadow-lg">
@@ -82,29 +87,44 @@ export default function DocumentDetailPage() {
     );
   }
 
-  const doc = demoDoc ?? (uploaded ? uploadedToDemoDocument(uploaded) : {
-    id: backendDoc!.id,
-    name: backendDoc!.title,
-    kind: 'report' as const,
-    date: backendDoc!.created_at
-      ? new Date(backendDoc!.created_at).toLocaleDateString('en-US', {
-          month: 'short', day: '2-digit', year: 'numeric',
-        })
-      : 'Recent',
-    pages: 1,
-    status: backendDoc!.processed ? 'processed' as const : 'processing' as const,
-    flag: 'normal' as const,
-  });
+  const doc = demoDoc
+    ?? (visibleBackendDoc
+      ? {
+          id: visibleBackendDoc.id,
+          name: visibleBackendDoc.title,
+          kind: 'report' as const,
+          date: visibleBackendDoc.created_at
+            ? new Date(visibleBackendDoc.created_at).toLocaleDateString('en-US', {
+                month: 'short', day: '2-digit', year: 'numeric',
+              })
+            : 'Recent',
+          pages: 1,
+          status: visibleBackendDoc.processed ? 'processed' as const : 'processing' as const,
+          flag: 'normal' as const,
+        }
+      : uploaded
+        ? uploadedToDemoDocument(uploaded)
+        : {
+            // Not a demo document and no local entry; the "not found" branch
+            // above already returned, so this fallback never renders.
+            id: id ?? '',
+            name: 'Unavailable document',
+            kind: 'report' as const,
+            date: 'Recent',
+            pages: 1,
+            status: 'processing' as const,
+            flag: 'normal' as const,
+          });
 
   const detail: DemoDocumentDetail | undefined = demoDoc
     ? DEMO_DOCUMENT_DETAILS[doc.id]
-    : backendDoc
+    : visibleBackendDoc
       ? {
-          summary: backendDoc.text
-            ? backendDoc.text.slice(0, 1000) + (backendDoc.text.length > 1000 ? '...' : '')
+          summary: visibleBackendDoc.text
+            ? visibleBackendDoc.text.slice(0, 1000) + (visibleBackendDoc.text.length > 1000 ? '...' : '')
             : 'Document uploaded and processed. No extracted text available.',
-          extractedAt: backendDoc.created_at
-            ? new Date(backendDoc.created_at).toLocaleString()
+          extractedAt: visibleBackendDoc.created_at
+            ? new Date(visibleBackendDoc.created_at).toLocaleString()
             : 'just now',
         }
       : {
@@ -179,7 +199,10 @@ export default function DocumentDetailPage() {
             AI-extracted findings
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            Synthetic demo extraction · {detail?.extractedAt ?? "not yet processed"}
+            {demoDoc
+              ? "Synthetic demo extraction"
+              : "Extracted from your document"}{" "}
+            · {detail?.extractedAt ?? "not yet processed"}
           </p>
 
           {detail?.summary && (

@@ -348,7 +348,24 @@ export async function fetchDocumentDetail(documentId: string): Promise<BackendDo
     const headers = await authHeaders();
     const response = await fetch(`${API_BASE}/api/documents/${documentId}`, { headers });
     if (!response.ok) return null;
-    return (await response.json()) as BackendDocumentDetail;
+    const raw: unknown = await response.json();
+    // The backend detail endpoint returns bare records keyed by `document_id` /
+    // `processed` / `content_type` (same shape as the list endpoint), so
+    // normalize the fields here to keep `id`, `processing_status` and
+    // `document_type` consistent with what callers expect.
+    const item = normalizeDocumentListItem(raw);
+    if (!item) return null;
+    const record = (raw ?? {}) as Record<string, unknown>;
+    return {
+      ...item,
+      text: typeof record.text === 'string' ? record.text : '',
+      metadata:
+        typeof record.metadata === 'object' && record.metadata !== null
+          ? (record.metadata as Record<string, unknown>)
+          : {},
+      processed: record.processed === true,
+      source: 'local',
+    };
   } catch {
     return null;
   }

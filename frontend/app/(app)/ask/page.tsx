@@ -8,6 +8,7 @@ import {
   FileText,
   Lightbulb,
   Loader2,
+  RefreshCw,
   Send,
   ShieldCheck,
   Sparkles,
@@ -17,10 +18,11 @@ import {
   MessageSquare,
   RotateCcw,
 } from "lucide-react";
-import { askMedicalQuestion } from "@/lib/api";
+import { askMedicalQuestion, fetchDocuments } from "@/lib/api";
 import { getAllDocuments } from "@/lib/uploaded-documents";
 import { DEMO_DOCUMENT_DETAILS } from "@/lib/demo-data";
 import type { MedicalAnswerResponse, MedicalDocumentRecord } from "@/types/medical";
+import type { BackendDocumentListItem } from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -53,6 +55,15 @@ const toMedicalDocumentRecord = (doc: {
   type: doc.kind ?? "report",
   date: doc.date ?? new Date().toISOString().slice(0, 10),
   status: doc.status === "processing" ? "Needs review" : "Ready",
+  summary: "Relevant patient record document loaded for question answering.",
+});
+
+const backendToMedicalDocumentRecord = (doc: BackendDocumentListItem): MedicalDocumentRecord => ({
+  id: doc.id,
+  title: doc.title,
+  type: doc.document_type ?? "report",
+  date: doc.created_at ? doc.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+  status: doc.processing_status === "processing" ? "Needs review" : "Ready",
   summary: "Relevant patient record document loaded for question answering.",
 });
 
@@ -228,6 +239,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 /*  Main page component                                                */
 /* ================================================================== */
 
+type DocsStatus = "loading" | "error" | "ready";
+
 export default function AskPage() {
   const [question, setQuestion] = useState("");
   const [documents, setDocuments] = useState<MedicalDocumentRecord[]>([]);
@@ -235,13 +248,41 @@ export default function AskPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [docsStatus, setDocsStatus] = useState<DocsStatus>("loading");
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const available = getAllDocuments().slice(0, 6).map(toMedicalDocumentRecord);
-    setDocuments(available);
-  }, []);
+    let cancelled = false;
+
+    // Load real backend documents first; if that fails or returns nothing,
+    // fall back to the demo documents so the page is never empty.
+    fetchDocuments()
+      .then((backendDocs) => {
+        if (cancelled) return;
+        const records = backendDocs.map(backendToMedicalDocumentRecord);
+        if (records.length > 0) {
+          setDocuments(records.slice(0, 6));
+        } else {
+          const fallback = getAllDocuments().slice(0, 6).map(toMedicalDocumentRecord);
+          setDocuments(fallback);
+        }
+        setDocsStatus("ready");
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setDocsError(err instanceof Error ? err.message : "Could not load your documents.");
+        setDocsStatus("error");
+        const fallback = getAllDocuments().slice(0, 6).map(toMedicalDocumentRecord);
+        setDocuments(fallback);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -360,6 +401,12 @@ export default function AskPage() {
     setError(null);
   };
 
+  const handleRetryDocs = () => {
+    setDocsStatus("loading");
+    setDocsError(null);
+    setReloadKey((key) => key + 1);
+  };
+
   const hasMessages = messages.length > 0;
 
   return (
@@ -391,8 +438,33 @@ export default function AskPage() {
         )}
       </div>
 
+      {/* ── Document selector states ───────────────────────────── */}
+      {docsStatus === "loading" && (
+        <div className="flex items-center justify-center gap-3 rounded-2xl border border-white/40 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-sm">
+          <Loader2 className="h-4 w-4 animate-spin text-teal-600" aria-hidden="true" />
+          <p className="text-sm font-medium text-slate-600">Loading your documents…</p>
+        </div>
+      )}
+
+      {docsStatus === "error" && (
+        <div className="flex items-center justify-between rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 shadow-sm backdrop-blur-sm">
+          <p className="text-sm text-amber-700">
+            Could not load your latest documents.
+            {docsError && <span className="ml-1 text-xs text-amber-600/80">({docsError})</span>}
+          </p>
+          <button
+            type="button"
+            onClick={handleRetryDocs}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-500/10"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* ── Document selector ──────────────────────────────────── */}
-      {documents.length > 0 && (
+      {documents.length > 0 && docsStatus !== "loading" && (
         <div className="rounded-2xl border border-white/40 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
