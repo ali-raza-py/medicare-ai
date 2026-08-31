@@ -48,9 +48,17 @@ except ImportError:
 try:
     from paddleocr import PaddleOCR
     _PADDLE_AVAILABLE = True
+    # Detect major version — PaddleOCR 3.x has a completely different API.
+    _paddle_version = getattr(PaddleOCR, '__version__', None) or ''
+    try:
+        _PADDLE_V3 = int(_paddle_version.split('.')[0]) >= 3
+    except (ValueError, IndexError):
+        # Fallback: check if predict() method exists (3.x) vs only ocr() (2.x)
+        _PADDLE_V3 = hasattr(PaddleOCR, 'predict')
 except ImportError:
     PaddleOCR = None  # type: ignore[assignment,misc]
     _PADDLE_AVAILABLE = False
+    _PADDLE_V3 = False
 
 try:
     import numpy as np
@@ -90,16 +98,23 @@ def _get_ocr_engine() -> 'PaddleOCR':
             return _ocr_engine
         if not _PADDLE_AVAILABLE or PaddleOCR is None:
             raise RuntimeError('PaddleOCR is not installed')
-        logger.info('Initializing PaddleOCR engine (first call)')
-        _ocr_engine = PaddleOCR(
+        logger.info('Initializing PaddleOCR engine (first call, v%s)',
+                    _paddle_version if _PADDLE_AVAILABLE else '?')
+        # Suppress noisy PaddleOCR / PaddlePaddle loggers.
+        logging.getLogger('ppocr').setLevel(logging.WARNING)
+        logging.getLogger('paddle').setLevel(logging.WARNING)
+        init_kwargs: dict = dict(
             use_angle_cls=True,
             lang='en',
-            show_log=False,
             # OneDNN is disabled via env var at module top; passing
             # enable_mkldnn=False ensures paddleocr also calls
             # config.disable_onednn() on the inference config.
             enable_mkldnn=False,
         )
+        # show_log= was removed in PaddleOCR >= 3.0
+        if not _PADDLE_V3:
+            init_kwargs['show_log'] = False
+        _ocr_engine = PaddleOCR(**init_kwargs)
         return _ocr_engine
 
 
@@ -179,36 +194,87 @@ def _empty_result(errors: list[str], processing_time_ms: float = 0.0) -> OCRDocu
     )
 
 
-def _parse_ocr_result(raw_result: list) -> tuple[str, float, list[OCRBoxResult]]:
+def _parse_ocr_result(raw_result) -> tuple[str, float, list[OCRBoxResult]]:
     """Parse a single-image PaddleOCR result into text, confidence, and boxes.
 
-    PaddleOCR 3.x ``ocr()`` returns a list (per image) where each element is:
-        [[[x1,y1],[x2,y2],[x3,y3],[x4,y4]], (text, confidence)]
+    Handles both formats:
+      - PaddleOCR 2.x: ``[[[bbox, (text, score)], ...]]``
+      - PaddleOCR 3.x: dict-like with ``rec_texts``, ``rec_scores``, ``dt_polys``
     """
-    if not raw_result:
+    if raw_result is None:
         return '', 0.0, []
 
-    # The outer list wraps per-image results; we pass a single image so take [0].
-    page_results = raw_result[0] if isinstance(raw_result[0], list) and len(raw_result) == 1 else raw_result
-    if page_results is None:
+    # Materialise generator if needed.
+    if not isinstance(raw_result, (list, dict)):
+        try:
+            items = list(raw_result)
+        except TypeError:
+            return '', 0.0, []
+    else:
+        items = raw_result if isinstance(raw_result, list) else [raw_result]
+
+    if not items:
         return '', 0.0, []
 
-    boxes: list[OCRBoxResult] = []
+    res = items[0]  # single-image result
+
+    # ---- PaddleOCR 3.x dict-like format --------------------------------
+    rec_texts = (
+        res.get('rec_texts', [])  if hasattr(res, 'get')
+        else getattr(res, 'rec_texts', [])
+    )
+    if rec_texts:
+        rec_scores = (
+            res.get('rec_scores', []) if hasattr(res, 'get')
+            else getattr(res, 'rec_scores', [])
+        )
+        dt_polys = (
+            res.get('dt_polys', []) if hasattr(res, 'get')
+            else getattr(res, 'dt_polys', [])
+        )
+        boxes: list[OCRBoxResult] = []
+        for idx, text in enumerate(rec_texts):
+            if not text or not str(text).strip():
+                continue
+            score = float(rec_scores[idx]) if idx < len(rec_scores) else 0.0
+            poly  = dt_polys[idx] if idx < len(dt_polys) else []
+            try:
+                bbox_clean = [[float(p[0]), float(p[1])] for p in poly]
+            except (TypeError, IndexError):
+                bbox_clean = []
+            boxes.append(OCRBoxResult(text=str(text), confidence=score, bbox=bbox_clean))
+
+        if boxes and boxes[0].bbox:
+            boxes.sort(key=lambda b: (min(p[1] for p in b.bbox), min(p[0] for p in b.bbox)))
+        full_text = '\n'.join(box.text for box in boxes)
+        avg_conf  = sum(box.confidence for box in boxes) / len(boxes) if boxes else 0.0
+        return full_text, avg_conf, boxes
+
+    # ---- PaddleOCR 2.x legacy format -----------------------------------
+    # [[bbox, (text, score)], ...] per image
+    page_results = (
+        res if isinstance(res, list) else
+        (res[0] if isinstance(res[0], list) and len(res) == 1 else res)
+    ) if isinstance(res, list) else []
+    if not page_results:
+        return '', 0.0, []
+
+    boxes = []
     for item in page_results:
-        bbox = item[0]  # [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
-        rec = item[1]   # (text, confidence)
-        text = rec[0]
-        confidence = float(rec[1])
-        # Ensure bbox is list of lists of float
-        bbox_clean = [[float(p[0]), float(p[1])] for p in bbox]
-        boxes.append(OCRBoxResult(text=text, confidence=confidence, bbox=bbox_clean))
+        try:
+            bbox = item[0]
+            rec  = item[1]
+            text = rec[0]
+            score = float(rec[1])
+            bbox_clean = [[float(p[0]), float(p[1])] for p in bbox]
+            boxes.append(OCRBoxResult(text=str(text), confidence=score, bbox=bbox_clean))
+        except (TypeError, IndexError):
+            continue
 
-    # Sort by vertical position (top of bbox) then horizontal for reading order
-    boxes.sort(key=lambda b: (min(p[1] for p in b.bbox), min(p[0] for p in b.bbox)))
-
+    if boxes and boxes[0].bbox:
+        boxes.sort(key=lambda b: (min(p[1] for p in b.bbox), min(p[0] for p in b.bbox)))
     full_text = '\n'.join(box.text for box in boxes)
-    avg_conf = sum(box.confidence for box in boxes) / len(boxes) if boxes else 0.0
-
+    avg_conf  = sum(box.confidence for box in boxes) / len(boxes) if boxes else 0.0
     return full_text, avg_conf, boxes
 
 
@@ -271,8 +337,10 @@ def _extract_pdf(file_bytes: bytes) -> OCRDocumentResult:
                 img_array = img_array[:, :, :3]
 
             engine = _get_ocr_engine()
-            raw_result = engine.ocr(img_array, cls=True)
-
+            if _PADDLE_V3:
+                raw_result = list(engine.predict(img_array))
+            else:
+                raw_result = engine.ocr(img_array, cls=True)
             text, confidence, boxes = _parse_ocr_result(raw_result)
 
             pages.append(OCRPageResult(
@@ -347,7 +415,10 @@ def _extract_image(file_bytes: bytes) -> OCRDocumentResult:
 
     try:
         engine = _get_ocr_engine()
-        raw_result = engine.ocr(img_array, cls=True)
+        if _PADDLE_V3:
+            raw_result = list(engine.predict(img_array))
+        else:
+            raw_result = engine.ocr(img_array, cls=True)
         text, confidence, boxes = _parse_ocr_result(raw_result)
     except Exception as exc:
         logger.error('PaddleOCR failed on image: %s', exc)
