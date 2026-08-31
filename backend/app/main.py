@@ -302,7 +302,7 @@ async def upload_document(
             file_name=file.filename,
             document_type=str(metadata.get('file_type') or 'document'),
             extracted_text=text,
-            processing_status='processed',
+            processing_status='completed',
         )
         supabase_synced = saved is not None
 

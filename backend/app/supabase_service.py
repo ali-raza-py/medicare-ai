@@ -101,7 +101,7 @@ def save_document(
     file_name: str,
     document_type: str,
     extracted_text: str = '',
-    processing_status: str = 'processed',
+    processing_status: str = 'completed',
     storage_path: str | None = None,
     user_token: str | None = None,
 ) -> dict[str, Any] | None:
@@ -120,8 +120,9 @@ def save_document(
         }
         if user_id:
             row['user_id'] = user_id
-        if storage_path:
-            row['storage_path'] = storage_path
+        # storage_path is NOT NULL in the schema; default to a deterministic
+        # path under the document id when no file upload was performed.
+        row['storage_path'] = storage_path or f"{document_id}/{file_name}"
 
         # Use upsert so re-processing updates the existing row. Note: without a
         # Prefer: return=representation header the response carries no data, so
