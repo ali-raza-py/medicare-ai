@@ -78,8 +78,12 @@ export default function UploadPage() {
   const [announcements, setAnnouncements] = useState<string[]>([]);
   const entriesRef = useRef<FileEntry[]>([]);
 
-  // Production (Vercel) serves the backend on the same origin via an /api/*
-  // rewrite; local dev targets the standalone uvicorn server on port 8000.
+  // API base URL selection:
+  // - If NEXT_PUBLIC_API_BASE_URL is set (e.g. https://medicare-ai-backend.onrender.com)
+  //   the frontend talks directly to that external backend.
+  // - If it is not set and NODE_ENV is production, fall back to the same origin
+  //   (legacy Vercel serverless backend behind the /api/* rewrite).
+  // - In local development the standalone uvicorn server on port 8000 is used.
   const API_BASE =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000');

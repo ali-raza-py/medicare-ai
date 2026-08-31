@@ -1,0 +1,40 @@
+﻿============================================================
+PROVIDER: groq
+MODEL: openai/gpt-oss-20b
+CONFIDENCE: Low
+EVIDENCE COUNT: 1
+============================================================
+ANSWER:
+**Abnormal values in your CBC (from the uploaded report)**  
+
+| Parameter | Result | Reference range | Flag | Comment |
+|-----------|--------|-----------------|------|---------|
+| Hemoglobin | **12.5ΓÇ»g/dL** | 13.0ΓÇ»ΓÇôΓÇ»17.0ΓÇ»g/dL | Low | Below the normal range. |
+| PCV (Hematocrit) | **57.5ΓÇ»%** | 40ΓÇ»ΓÇôΓÇ»50ΓÇ»% | High | Above the normal range. |
+| Platelet count | **150ΓÇ»000ΓÇ»/┬╡L** | 150ΓÇ»000ΓÇ»ΓÇôΓÇ»400ΓÇ»000ΓÇ»/┬╡L | Borderline low | At the lower end of normal. |
+
+**Other values**  
+- WBC count (7ΓÇ»200ΓÇ»/┬╡L) ΓÇô normal (4000ΓÇ»ΓÇôΓÇ»11ΓÇ»000ΓÇ»/┬╡L).  
+- RBC count (4.8ΓÇ»├ùΓÇ»10Γü╢/┬╡L) ΓÇô normal (4.5ΓÇ»ΓÇôΓÇ»5.5ΓÇ»├ùΓÇ»10Γü╢/┬╡L).  
+- MCV, MCH, MCHC ΓÇô all within normal ranges.
+
+---
+
+### General medical knowledge (reference ranges)
+
+- **Hemoglobin**: 13.0ΓÇô17.0ΓÇ»g/dL for adult males; 12.0ΓÇô15.5ΓÇ»g/dL for adult females.  
+- **PCV (Hematocrit)**: 40ΓÇô50ΓÇ»% for adult males; 36ΓÇô44ΓÇ»% for adult females.  
+- **Platelet count**: 150ΓÇ»000ΓÇô400ΓÇ»000ΓÇ»/┬╡L.  
+- **WBC count**: 4ΓÇ»000ΓÇô11ΓÇ»000ΓÇ»/┬╡L.  
+- **RBC count**: 4.5ΓÇô5.5ΓÇ»├ùΓÇ»10Γü╢/┬╡L.  
+- **MCV**: 80ΓÇô100ΓÇ»fL.  
+- **MCH**: 27ΓÇô32ΓÇ»pg.  
+- **MCHC**: 32ΓÇô36ΓÇ»g/dL.
+
+---
+
+**Next steps**  
+These flagged values (low hemoglobin, high PCV, borderline low platelets) are worth discussing with your healthcare provider to determine if further evaluation or followΓÇæup is needed.
+============================================================
+EVIDENCE:
+  [CBC_Report.pdf] COMPLETE BLOOD COUNT (CBC) Patient: Test Patient Date: 2026-08-24 TEST RESULT REFERENCE RANGE FLAG H...

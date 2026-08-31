@@ -8,9 +8,12 @@ import {
   SymptomAnalysisRequest,
 } from '@/types/medical';
 
-// In production (Vercel) the FastAPI backend is deployed on the same origin
-// behind an /api/* rewrite, so an empty base yields relative URLs. Local dev
-// still targets the standalone uvicorn server on port 8000.
+// API base URL selection:
+// - If NEXT_PUBLIC_API_BASE_URL is set (e.g. https://medicare-ai-backend.onrender.com)
+//   the frontend talks directly to that external backend.
+// - If it is not set and NODE_ENV is production, fall back to the same origin
+//   (legacy Vercel serverless backend behind the /api/* rewrite).
+// - In local development the standalone uvicorn server on port 8000 is used.
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000');

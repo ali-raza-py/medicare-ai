@@ -2,6 +2,10 @@
 # Deploy via: Render dashboard -> New + -> Blueprint -> select this repo.
 # Secrets (MEDICARE_JWT_SECRET, MEDICARE_AI_API_KEY, SUPABASE_SERVICE_ROLE_KEY)
 # must be added manually in the Render service environment settings — never commit them.
+#
+# After deployment, set NEXT_PUBLIC_API_BASE_URL in the Vercel dashboard to the
+# Render service URL (e.g. https://medicare-ai-backend.onrender.com) so the
+# Vercel-hosted frontend calls Render instead of the Vercel serverless function.
 services:
   - type: web
     name: medicare-ai-backend
@@ -15,8 +19,11 @@ services:
         value: "3.12"
       - key: MEDICARE_ENV
         value: production
+      # Allow the Vercel production alias, the auto-generated Vercel production
+      # domains, and local development. Preview deployments must be added here
+      # manually because FastAPI CORSMiddleware does not support wildcards.
       - key: CORS_ALLOWED_ORIGINS
-        value: https://medicare-ai.vercel.app
+        value: "https://medicare-ai.vercel.app,https://medicare-ai-sigma.vercel.app,https://medicare-ai-ali-raza4.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
       - key: MEDICARE_UPLOAD_DIR
         value: /tmp/uploads
       - key: MEDICARE_AI_PROVIDER

@@ -1,0 +1,29 @@
+﻿.\.venv\Scripts\python.exe : INFO: Could not find files for the given pattern(s).
+At line:1 char:29
++ ... edicare-ai; .\.venv\Scripts\python.exe _auto_load_test.py 2>&1 | Out- ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (INFO: Could not...ven pattern(s).:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+C:\Users\HP\medicare-ai\.venv\Lib\site-packages\paddle\utils\cpp_extension\extension_utils.py:712: UserWarning: No 
+ccache found. Please be aware that recompiling all source files may be required. You can download and install ccache 
+from: https://github.com/ccache/ccache/blob/master/doc/INSTALL.md
+  warnings.warn(warning_message)
+[2026-09-01 00:26:51,434] [   ERROR] auth.py:31 - MEDICARE_JWT_SECRET is not set ù signature verification is 
+impossible and all authenticated requests will be rejected. Set MEDICARE_JWT_SECRET before deploying.
+[2026-09-01 00:26:51,782] [    INFO] supabase_service.py:41 - Supabase service client initialised (service-role mode)
+[2026-09-01 00:26:51,782] [    INFO] main.py:128 - Supabase integration is active
+[2026-09-01 00:26:52,213] [    INFO] providers.py:100 - Groq client initialised (cached).
+[2026-09-01 00:26:53,262] [    INFO] _client.py:1025 - HTTP Request: POST 
+https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+Auto-loaded 3 document(s)
+  - Lipid Panel (1 chunks, 52 chars)
+  - nutrition_note.pdf (1 chunks, 72 chars)
+  - empty.pdf (1 chunks, 47 chars)
+Other user auto-loaded: 0 document(s) (should be 0)
+
+Provider: groq | Confidence: Medium
+Answer preview: **Abnormal values found in your records**
+
+| Test | Result (from your report) | Reference range (general medical knowledge) | Interpretation |
+|------|---------------------------|---------------------...
