@@ -123,13 +123,11 @@ def save_document(
         if storage_path:
             row['storage_path'] = storage_path
 
-        # Use upsert so re-processing updates the existing row
-        result = (
-            client.table('documents')
-            .upsert(row, on_conflict='id')
-            .execute()
-        )
-        return result.data[0] if result.data else None
+        # Use upsert so re-processing updates the existing row. Note: without a
+        # Prefer: return=representation header the response carries no data, so
+        # success is "no exception raised" rather than a non-empty result.
+        client.table('documents').upsert(row, on_conflict='id').execute()
+        return {'id': document_id}
     except Exception as exc:
         logger.warning('Supabase save_document failed: %s', exc)
         return None
