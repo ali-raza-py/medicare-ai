@@ -8,7 +8,12 @@ import {
   SymptomAnalysisRequest,
 } from '@/types/medical';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+// In production (Vercel) the FastAPI backend is deployed on the same origin
+// behind an /api/* rewrite, so an empty base yields relative URLs. Local dev
+// still targets the standalone uvicorn server on port 8000.
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000');
 
 /**
  * Return the current Supabase access token for authenticated backend requests.

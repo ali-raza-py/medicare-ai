@@ -501,6 +501,103 @@ def test_upload_image_document():
     assert data['status'] == 'uploaded'
 
 
+# ---------------------------------------------------------------------------
+# JWT security tests — signature verification is mandatory, never bypassed
+# ---------------------------------------------------------------------------
+
+
+def test_valid_signed_jwt_accepted() -> None:
+    """A correctly signed token authenticates and reaches user data."""
+    response = client.get('/api/documents', headers=_auth_headers("valid-user@example.com"))
+    assert response.status_code == 200
+
+
+def test_tampered_signature_rejected() -> None:
+    """A token whose signature segment is tampered must be rejected."""
+    token = _make_token("tamper@example.com")
+    header, payload, _signature = token.split('.')
+    tampered = f"{header}.{payload}.AAAA" + "B" * 32
+
+    response = client.get('/api/documents', headers={'Authorization': f'Bearer {tampered}'})
+    assert response.status_code == 401
+
+
+def test_forged_token_with_other_secret_rejected() -> None:
+    """A token signed with an attacker-controlled secret must be rejected,
+    and must not grant access to any document data."""
+    forged = jwt.encode(
+        {"sub": "victim@example.com", "email": "victim@example.com", "aud": "authenticated"},
+        "attacker-controlled-secret",
+        algorithm="HS256",
+    )
+
+    response = client.get('/api/documents', headers={'Authorization': f'Bearer {forged}'})
+    assert response.status_code == 401
+
+    detail = client.get('/api/documents/any-doc-id', headers={'Authorization': f'Bearer {forged}'})
+    assert detail.status_code == 401
+
+
+def test_expired_jwt_rejected() -> None:
+    import time
+
+    expired = jwt.encode(
+        {"sub": "expired@example.com", "email": "expired@example.com", "exp": int(time.time()) - 3600},
+        JWT_SECRET,
+        algorithm="HS256",
+    )
+    response = client.get('/api/documents', headers={'Authorization': f'Bearer {expired}'})
+    assert response.status_code == 401
+
+
+def test_malformed_jwt_rejected() -> None:
+    for garbage in ("not-a-jwt", "a.b.c", "Bearer", "..."):
+        response = client.get('/api/documents', headers={'Authorization': f'Bearer {garbage}'})
+        assert response.status_code == 401, f'garbage token {garbage!r} was not rejected'
+
+
+def test_missing_jwt_secret_fails_closed(monkeypatch) -> None:
+    """With no signing secret configured, requests must never be decoded
+    without verification — the endpoint fails closed instead."""
+    import backend.app.auth as auth_module
+    from backend.app.config import Settings
+
+    monkeypatch.setattr(auth_module, 'settings', Settings(jwt_secret=None))
+
+    # Even a structurally valid token must not be accepted.
+    response = client.get('/api/documents', headers=_auth_headers("anyone@example.com"))
+    assert response.status_code == 503
+
+    unauthorized = client.get('/api/documents')
+    assert unauthorized.status_code == 401
+
+
+def test_missing_jwt_secret_in_production_refuses_to_start() -> None:
+    """A non-development environment without MEDICARE_JWT_SECRET must abort
+    startup rather than run with insecure authentication."""
+    from backend.app.auth import ensure_jwt_configured
+
+    with pytest.raises(RuntimeError):
+        ensure_jwt_configured('production', None)
+
+    # With the secret present, startup validation passes.
+    ensure_jwt_configured('production', 'a-configured-secret')
+    # Development without a secret does not crash startup (requests still
+    # fail closed at runtime, covered by test_missing_jwt_secret_fails_closed).
+    ensure_jwt_configured('development', None)
+
+
+def test_algorithm_none_token_rejected() -> None:
+    """An unsigned alg=none token must never be accepted."""
+    token = jwt.encode(
+        {"sub": "none@example.com", "email": "none@example.com"},
+        None,
+        algorithm="none",
+    )
+    response = client.get('/api/documents', headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 401
+
+
 def test_upload_oversized_file():
     """Upload a file > 50MB and verify rejection."""
     big_content = b"x" * (51 * 1024 * 1024)

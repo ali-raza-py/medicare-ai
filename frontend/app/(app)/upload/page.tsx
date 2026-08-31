@@ -78,7 +78,11 @@ export default function UploadPage() {
   const [announcements, setAnnouncements] = useState<string[]>([]);
   const entriesRef = useRef<FileEntry[]>([]);
 
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+  // Production (Vercel) serves the backend on the same origin via an /api/*
+  // rewrite; local dev targets the standalone uvicorn server on port 8000.
+  const API_BASE =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000');
 
   // Retrieve the current Supabase access token (null if not logged in)
   const getAccessToken = async (): Promise<string | null> => {

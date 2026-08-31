@@ -63,3 +63,5 @@ venv/
 *.webp
 !frontend/public/*.png
 !frontend/public/*.webp
+
+.vercel-tmp/

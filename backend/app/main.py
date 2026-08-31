@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from backend.app.auth import AuthUser, get_auth_user
+from backend.app.auth import AuthUser, ensure_jwt_configured, get_auth_user
 from backend.app.config import settings
 from backend.app.document_pipeline import (
     build_event_description,
@@ -36,6 +36,10 @@ except ImportError:
 _ALLOWED_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.webp'}
 
 app = FastAPI(title='MediCare AI Backend', version='0.1.0')
+
+# JWT signature verification is mandatory. In production a missing signing
+# secret must abort startup rather than run with insecure authentication.
+ensure_jwt_configured(settings.environment, settings.jwt_secret)
 
 app.add_middleware(
     CORSMiddleware,

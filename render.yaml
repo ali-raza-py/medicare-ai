@@ -1,0 +1,29 @@
+# Render blueprint for the MediCare AI FastAPI backend.
+# Deploy via: Render dashboard -> New + -> Blueprint -> select this repo.
+# Secrets (MEDICARE_JWT_SECRET, MEDICARE_AI_API_KEY, SUPABASE_SERVICE_ROLE_KEY)
+# must be added manually in the Render service environment settings — never commit them.
+services:
+  - type: web
+    name: medicare-ai-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: MEDICARE_ENV
+        value: production
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://medicare-ai.vercel.app
+      - key: MEDICARE_UPLOAD_DIR
+        value: /tmp/uploads
+      - key: MEDICARE_AI_PROVIDER
+        value: groq
+      - key: MEDICARE_AI_MODEL
+        value: openai/gpt-oss-20b
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: https://fftwxbmoacdxcquowqzv.supabase.co
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_vKrzdw4n94QPVKwAtfDwOQ_w7oG_LPY
