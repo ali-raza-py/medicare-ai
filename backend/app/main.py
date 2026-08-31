@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -53,6 +54,51 @@ logger = logging.getLogger(__name__)
 
 store = build_document_store(settings.upload_dir)
 provider = build_provider()
+
+
+def _is_uuid(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        uuid.UUID(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _hydrate_from_supabase(document_id: str, current_user: AuthUser) -> DocumentRecord | None:
+    """Load a document row from Supabase when this instance's local store does
+    not have it (Vercel serverless instances do not share a filesystem)."""
+    if not supabase_service.is_available() or not _is_uuid(current_user.sub):
+        return None
+    row = supabase_service.get_document_record(document_id)
+    if not row or row.get('user_id') != current_user.sub:
+        return None
+    text = str(row.get('extracted_text') or '')
+    filename = str(row.get('file_name') or document_id)
+    document = DocumentRecord(
+        document_id=str(row['id']),
+        title=filename,
+        filename=filename,
+        content_type='application/octet-stream',
+        text=text,
+        chunks=chunk_text(text),
+        metadata={'filename': filename, 'file_type': row.get('document_type')},
+        processed=True,
+        created_at=str(row.get('created_at') or ''),
+        owner=current_user.email,
+    )
+    store.documents[document_id] = document  # cache for this instance
+    return document
+
+
+def _resolve_document(document_id: str, current_user: AuthUser) -> DocumentRecord | None:
+    document = store.get(document_id)
+    if document is not None:
+        if document.owner != current_user.email:
+            raise HTTPException(status_code=403, detail='Access denied.')
+        return document
+    return _hydrate_from_supabase(document_id, current_user)
 
 # Initialise Supabase integration (no-ops if vars are absent)
 supabase_service.configure(
@@ -216,6 +262,9 @@ async def upload_document(
     if _ocr_ok:
         ocr_result = await asyncio.to_thread(extract_text_structured, contents, file.filename)
         text = ocr_result['full_text'] if ocr_result else ''
+        # Page markers without any alphanumeric content count as empty.
+        if text and not re.search(r'[0-9a-zA-Z]', text):
+            text = ''
         # Fall back to legacy extraction when OCR returns empty (e.g. minimal/stub PDFs)
         if not text:
             text = extract_text_from_bytes(contents, file.filename)
@@ -241,8 +290,21 @@ async def upload_document(
     )
     store.add(doc)
 
-    # Supabase sync (user_token obtained from auth dependency in a future refactor)
+    # Supabase sync — the shared source of truth across serverless instances.
+    # Only rows with a real user UUID are stored; ownerless rows could never be
+    # resolved back to a user later.
     supabase_synced = False
+    owner_id = current_user.sub if _is_uuid(current_user.sub) else None
+    if supabase_service.is_available() and owner_id:
+        saved = supabase_service.save_document(
+            user_id=owner_id,
+            document_id=document_id,
+            file_name=file.filename,
+            document_type=str(metadata.get('file_type') or 'document'),
+            extracted_text=text,
+            processing_status='processed',
+        )
+        supabase_synced = saved is not None
 
     return {
         'document_id': document_id,
@@ -260,11 +322,9 @@ def get_document(
 ) -> dict[str, Any]:
     """Real stored document record, used by the Documents detail page when a
     Timeline deep-link points at a backend document."""
-    document = store.get(document_id)
+    document = _resolve_document(document_id, current_user)
     if document is None:
         raise HTTPException(status_code=404, detail='Document not found.')
-    if document.owner != current_user.email:
-        raise HTTPException(status_code=403, detail='Access denied.')
     return {
         'document_id': document.document_id,
         'title': document.title,
@@ -284,9 +344,11 @@ def list_documents(
 ) -> list[dict[str, Any]]:
     """List the authenticated user's stored documents, newest first."""
     documents = []
+    seen_ids: set[str] = set()
     for document in store.list():
         if document.owner != current_user.email:
             continue
+        seen_ids.add(document.document_id)
         documents.append({
             'document_id': document.document_id,
             'title': document.title,
@@ -298,6 +360,25 @@ def list_documents(
             'processed': document.processed,
             'created_at': document.created_at,
         })
+    # Merge documents persisted in Supabase that this instance hasn't seen.
+    if supabase_service.is_available() and _is_uuid(current_user.sub):
+        for row in supabase_service.list_user_documents(user_id=current_user.sub):
+            row_id = str(row.get('id') or '')
+            if not row_id or row_id in seen_ids:
+                continue
+            text = str(row.get('extracted_text') or '')
+            filename = str(row.get('file_name') or row_id)
+            documents.append({
+                'document_id': row_id,
+                'title': filename,
+                'filename': filename,
+                'content_type': 'application/octet-stream',
+                'text': text,
+                'chunks': len(chunk_text(text)),
+                'metadata': {'filename': filename, 'file_type': row.get('document_type')},
+                'processed': True,
+                'created_at': str(row.get('created_at') or ''),
+            })
     documents.sort(key=lambda d: d['created_at'], reverse=True)
     return documents
 
@@ -307,11 +388,9 @@ async def process_document(
     payload: ProcessDocumentRequest,
     current_user: AuthUser = Depends(get_auth_user),
 ) -> dict[str, Any]:
-    document = store.get(payload.document_id)
+    document = _resolve_document(payload.document_id, current_user)
     if document is None:
         raise HTTPException(status_code=404, detail='Document not found.')
-    if document.owner != current_user.email:
-        raise HTTPException(status_code=403, detail='Access denied.')
 
     chunks = chunk_text(document.text)
     document.chunks = chunks
@@ -334,8 +413,13 @@ async def medical_answer(
 ) -> dict[str, Any]:
     docs: list[DocumentRecord] = []
     for document_id in payload.documents:
-        document = store.get(document_id)
-        if document is not None and document.owner == current_user.email:
+        try:
+            document = _resolve_document(document_id, current_user)
+        except HTTPException:
+            continue  # never leak existence of other users' documents
+        if document is not None:
+            if not document.chunks and document.text:
+                document.chunks = chunk_text(document.text)
             docs.append(document)
 
     if payload.documents and not docs and not payload.context:

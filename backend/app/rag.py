@@ -54,6 +54,24 @@ def build_medical_answer(
                 'section': 'clinical-note',
             })
 
+    # Fallback: a selected document that produced no matching chunks still has
+    # its leading text included, so general questions about the document
+    # ("what is in this report") can be answered from its content.
+    matched_ids = {entry['document_id'] for entry in relevant}
+    for document in documents:
+        if document.document_id in matched_ids:
+            continue
+        cleaned = re.sub(r'\s+', ' ', document.text or '').strip()
+        if not cleaned or cleaned == 'No readable text detected in the uploaded file.':
+            continue
+        relevant.append({
+            'document_id': document.document_id,
+            'document_name': document.title,
+            'score': 0.1,
+            'snippet': cleaned[:1500],
+            'section': 'clinical-note',
+        })
+
     evidence = [
         {
             'documentName': entry['document_name'],

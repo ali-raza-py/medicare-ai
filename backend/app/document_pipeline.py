@@ -25,6 +25,11 @@ def extract_text_from_bytes(file_bytes: bytes, filename: str) -> str:
     text = file_bytes.decode('utf-8', errors='ignore')
     if not text.strip():
         return 'No readable text detected in the uploaded file.'
+    # Binary files (images, scanned PDFs) decode to garbage; only keep the raw
+    # decode when it is overwhelmingly printable text (e.g. stub/plain-text PDFs).
+    printable = sum(1 for ch in text if ch.isprintable() or ch in '\n\r\t')
+    if printable / max(len(text), 1) < 0.9:
+        return 'No readable text detected in the uploaded file.'
     return text
 
 

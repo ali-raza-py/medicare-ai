@@ -402,12 +402,22 @@ def test_settings_load_api_key_from_dotenv(monkeypatch, tmp_path):
     )
 
     monkeypatch.chdir(tmp_path)
+    for var in ('MEDICARE_AI_PROVIDER', 'MEDICARE_AI_MODEL', 'MEDICARE_AI_API_KEY'):
+        monkeypatch.delenv(var, raising=False)
     import backend.app.config as config_module
     importlib.reload(config_module)
 
     assert config_module.settings.ai_provider == 'gemini'
     assert config_module.settings.ai_model == 'gemini-1.5-flash'
     assert config_module.settings.ai_api_key == 'super-secret-key'
+
+    # Restore the real project settings so later tests are unaffected.
+    from pathlib import Path
+
+    for var in ('MEDICARE_AI_PROVIDER', 'MEDICARE_AI_MODEL', 'MEDICARE_AI_API_KEY'):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.chdir(Path(__file__).resolve().parents[2])
+    importlib.reload(config_module)
 
 
 def test_build_medical_answer_uses_live_provider(monkeypatch):
@@ -557,12 +567,16 @@ def test_malformed_jwt_rejected() -> None:
 
 
 def test_missing_jwt_secret_fails_closed(monkeypatch) -> None:
-    """With no signing secret configured, requests must never be decoded
-    without verification — the endpoint fails closed instead."""
+    """With no signing secret AND no Supabase verification configured, requests
+    must never be decoded without verification — the endpoint fails closed."""
     import backend.app.auth as auth_module
     from backend.app.config import Settings
 
-    monkeypatch.setattr(auth_module, 'settings', Settings(jwt_secret=None))
+    monkeypatch.setattr(
+        auth_module,
+        'settings',
+        Settings(jwt_secret=None, supabase_url=None, supabase_anon_key=None),
+    )
 
     # Even a structurally valid token must not be accepted.
     response = client.get('/api/documents', headers=_auth_headers("anyone@example.com"))
@@ -570,6 +584,20 @@ def test_missing_jwt_secret_fails_closed(monkeypatch) -> None:
 
     unauthorized = client.get('/api/documents')
     assert unauthorized.status_code == 401
+
+
+def test_missing_jwt_secret_with_supabase_still_rejects_bad_tokens(monkeypatch) -> None:
+    """Without a local signing secret but with Supabase configured, tokens are
+    verified remotely; tokens that fail remote verification must be rejected
+    (never accepted unverified)."""
+    import backend.app.auth as auth_module
+    from backend.app.config import Settings
+
+    monkeypatch.setattr(auth_module, 'settings', Settings(jwt_secret=None))
+    monkeypatch.setattr(auth_module, '_verify_via_supabase', lambda token: None)
+
+    response = client.get('/api/documents', headers=_auth_headers("anyone@example.com"))
+    assert response.status_code == 401
 
 
 def test_missing_jwt_secret_in_production_refuses_to_start() -> None:
