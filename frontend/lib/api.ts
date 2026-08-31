@@ -270,13 +270,62 @@ export type BackendDocumentListItem = {
   chunks: number;
 };
 
+// Normalize one record from GET /api/documents into the shape the UI uses.
+// The backend returns bare detail records keyed by `document_id` /
+// `processed` / `content_type`; wrapped or future responses may already carry
+// the UI field names, so both are accepted.
+function normalizeDocumentListItem(raw: unknown): BackendDocumentListItem | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const item = raw as Record<string, unknown>;
+  const id =
+    typeof item.id === 'string'
+      ? item.id
+      : typeof item.document_id === 'string'
+        ? item.document_id
+        : null;
+  if (!id) return null;
+
+  let processingStatus = 'processed';
+  if (typeof item.processing_status === 'string') {
+    processingStatus = item.processing_status;
+  } else if (typeof item.processed === 'boolean') {
+    processingStatus = item.processed ? 'processed' : 'processing';
+  }
+
+  return {
+    id,
+    title: typeof item.title === 'string' ? item.title : '',
+    filename: typeof item.filename === 'string' ? item.filename : '',
+    document_type:
+      typeof item.document_type === 'string'
+        ? item.document_type
+        : typeof item.content_type === 'string'
+          ? item.content_type
+          : null,
+    processing_status: processingStatus,
+    created_at: typeof item.created_at === 'string' ? item.created_at : null,
+    chunks: typeof item.chunks === 'number' ? item.chunks : 0,
+  };
+}
+
 export async function fetchDocuments(): Promise<BackendDocumentListItem[]> {
   try {
     const headers = await authHeaders();
     const response = await fetch(`${API_BASE}/api/documents`, { headers });
     if (!response.ok) return [];
-    const data = await response.json();
-    return (data.documents ?? []) as BackendDocumentListItem[];
+    const data: unknown = await response.json();
+    // The backend returns a bare array of records; tolerate a
+    // `{ documents: [...] }` wrapper as well.
+    const records: unknown[] = Array.isArray(data)
+      ? data
+      : data !== null &&
+          typeof data === 'object' &&
+          Array.isArray((data as { documents?: unknown }).documents)
+        ? (data as { documents: unknown[] }).documents
+        : [];
+    return records
+      .map(normalizeDocumentListItem)
+      .filter((item): item is BackendDocumentListItem => item !== null);
   } catch {
     return [];
   }
