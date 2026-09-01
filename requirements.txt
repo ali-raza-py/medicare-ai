@@ -5,6 +5,8 @@ python-dotenv>=1.0.1
 pydantic>=2.12.0
 pytest>=8.3.3
 httpx>=0.27.2
+PyJWT>=2.10.0  # JWT verification for Supabase access tokens (backend/app/auth.py)
+supabase>=2.0.0  # Document persistence (backend/app/supabase_service.py); degrades gracefully if absent
 google-generativeai>=0.3.0  # For Gemini fallback provider
 groq>=0.12.0  # Groq provider (OpenAI-compatible SDK)
 paddlepaddle>=2.6.0  # NOTE: Not available for Python 3.14 yet; requires Python <=3.12
