@@ -5,13 +5,19 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 from pydantic import BaseModel
-from jwt import PyJWTError, decode
+from jwt import PyJWKClient, PyJWTError, decode
 
 import httpx
 
 from backend.app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Cached JWKS client for Supabase's asymmetric signing keys. Supabase signs
+# new access tokens with a rotating ECC (P-256) key and publishes the public
+# halves at /auth/v1/.well-known/jwks.json, so ES256 tokens can be verified
+# locally without any shared secret.
+_jwk_client: PyJWKClient | None = None
 
 
 class AuthUser(BaseModel):
@@ -38,6 +44,52 @@ def ensure_jwt_configured(environment: str, jwt_secret: str | None) -> None:
         'MEDICARE_JWT_SECRET is not set. JWT signature verification is '
         'mandatory; refusing to start with insecure authentication '
         'configuration.'
+    )
+
+
+def _get_jwk_client() -> PyJWKClient | None:
+    """Return a cached JWKS client for the Supabase project, or None when
+    Supabase is not configured. Signing keys are cached for an hour so
+    steady-state verification stays local and fast."""
+    global _jwk_client
+    if not settings.supabase_url:
+        return None
+    if _jwk_client is None:
+        jwks_url = f"{settings.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        _jwk_client = PyJWKClient(jwks_url, cache_keys=True, lifespan=3600)
+    return _jwk_client
+
+
+def _verify_via_jwks(token: str) -> AuthUser | None:
+    """Verify an ES256-signed Supabase access token against the project's
+    published public keys (JWKS). Supabase rotated to asymmetric signing
+    keys, so tokens issued after the rotation cannot be checked with the
+    legacy shared secret. Returns None when verification is unavailable or
+    fails, letting the caller try the remaining verification paths."""
+    client = _get_jwk_client()
+    if client is None:
+        return None
+    try:
+        signing_key = client.get_signing_key_from_jwt(token)
+        # PyJWKClientError (JWKS fetch/parse/key-lookup failures) is a
+        # PyJWTError subclass, so this except clause covers network errors
+        # as well as signature/expiry/claim failures. As with the HS256 path,
+        # audience verification is disabled: authorization is based on
+        # 'sub'/'email', never on the audience claim.
+        payload = decode(
+            token,
+            signing_key.key,
+            algorithms=['ES256'],
+            options={'require': ['sub'], 'verify_aud': False},
+        )
+    except PyJWTError:
+        return None
+    email = payload.get('email')
+    aud = payload.get('aud')
+    return AuthUser(
+        sub=str(payload['sub']),
+        email=email if isinstance(email, str) else None,
+        aud=aud if isinstance(aud, str) else None,
     )
 
 
@@ -83,9 +135,11 @@ def get_auth_user(
     authenticated user's identity (sub + email).
 
     Verification order:
-    1. Local HS256 signature check with MEDICARE_JWT_SECRET (fast path; works
-       when the secret matches the Supabase project JWT secret).
-    2. Remote verification against Supabase's /auth/v1/user endpoint, which
+    1. Local HS256 signature check with MEDICARE_JWT_SECRET (legacy path;
+       only verifies tokens signed with Supabase's legacy shared secret).
+    2. JWKS verification against Supabase's published public keys — handles
+       the rotating ECC/ES256 signing keys and needs no shared secret.
+    3. Remote verification against Supabase's /auth/v1/user endpoint, which
        needs no shared secret at all.
     A token is NEVER accepted without one of these checks succeeding.
     """
@@ -122,15 +176,19 @@ def get_auth_user(
             return AuthUser(sub=str(payload['sub']), email=email if isinstance(email, str) else None, aud=aud if isinstance(aud, str) else None)
     else:
         logger.error(
-            'MEDICARE_JWT_SECRET is not set — falling back to remote '
-            'Supabase token verification.'
+            'MEDICARE_JWT_SECRET is not set — falling back to Supabase JWKS '
+            'and remote token verification.'
         )
+
+    user = _verify_via_jwks(token)
+    if user is not None:
+        return user
 
     user = _verify_via_supabase(token)
     if user is not None:
         return user
 
-    if not settings.jwt_secret and not (settings.supabase_url and settings.supabase_anon_key):
+    if not settings.jwt_secret and not settings.supabase_url:
         # Fail closed: no verification mechanism available at all.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

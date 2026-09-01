@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import pytest
 import jwt
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from backend.app.main import app, store
@@ -223,6 +224,66 @@ def test_unauthorized_medical_answer_rejected() -> None:
         json={'question': 'x', 'documents': []},
     )
     assert response.status_code == 401
+
+
+def test_es256_token_accepted_via_jwks(monkeypatch) -> None:
+    """Tokens signed with Supabase's post-rotation ECC keys (ES256) verify
+    against the project's published public keys, not the legacy secret."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    from backend.app import auth as auth_module
+
+    private_key = ec.generate_private_key(ec.SECP256R1())
+
+    class _FakeSigningKey:
+        key = private_key.public_key()
+
+    class _FakeJWKClient:
+        def get_signing_key_from_jwt(self, token):
+            return _FakeSigningKey()
+
+    monkeypatch.setattr(auth_module, '_get_jwk_client', lambda: _FakeJWKClient())
+    # Remote fallback is mocked so the test makes no network calls.
+    monkeypatch.setattr(auth_module, '_verify_via_supabase', lambda token: None)
+
+    token = jwt.encode(
+        {'sub': 'es-user', 'email': 'es@example.com', 'aud': 'authenticated'},
+        private_key,
+        algorithm='ES256',
+    )
+    user = auth_module.get_auth_user(authorization=f'Bearer {token}')
+    assert user.sub == 'es-user'
+    assert user.email == 'es@example.com'
+
+
+def test_forged_es256_token_rejected(monkeypatch) -> None:
+    """A token signed by a key that is not in the JWKS is rejected with 401
+    even when it otherwise carries valid-looking claims."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    from backend.app import auth as auth_module
+
+    jwks_key = ec.generate_private_key(ec.SECP256R1())
+    attacker_key = ec.generate_private_key(ec.SECP256R1())
+
+    class _FakeSigningKey:
+        key = jwks_key.public_key()
+
+    class _FakeJWKClient:
+        def get_signing_key_from_jwt(self, token):
+            return _FakeSigningKey()
+
+    monkeypatch.setattr(auth_module, '_get_jwk_client', lambda: _FakeJWKClient())
+    monkeypatch.setattr(auth_module, '_verify_via_supabase', lambda token: None)
+
+    forged = jwt.encode(
+        {'sub': 'attacker', 'email': 'attacker@example.com'},
+        attacker_key,
+        algorithm='ES256',
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        auth_module.get_auth_user(authorization=f'Bearer {forged}')
+    assert exc_info.value.status_code == 401
 
 
 def test_timeline_returns_real_document_events() -> None:
