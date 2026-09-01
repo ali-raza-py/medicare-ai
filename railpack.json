@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "deploy": {
+    "aptPackages": [
+      "libgomp1",
+      "libglib2.0-0",
+      "libgl1",
+      "libsm6",
+      "libxext6",
+      "libxrender1"
+    ]
+  }
+}

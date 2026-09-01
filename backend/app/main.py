@@ -30,9 +30,17 @@ from backend.app.storage import DocumentRecord, build_document_store
 from backend.app import supabase_service
 
 try:
-    from backend.app.ocr import OCR_AVAILABLE as _ocr_ok
+    from backend.app.ocr import OCR_AVAILABLE as _ocr_ok, ocr_status as _ocr_status
 except ImportError:
     _ocr_ok = False
+
+    def _ocr_status() -> dict:  # pragma: no cover - ocr module itself missing
+        return {
+            'paddle_available': False,
+            'paddleocr_version': None,
+            'paddle_import_error': 'backend.app.ocr failed to import',
+            'pymupdf_available': False,
+        }
 
 # Extensions the upload endpoint accepts.  Validated before any OCR work so
 # the client receives an immediate 415 rather than a silent empty document.
@@ -139,6 +147,10 @@ class HealthResponse(BaseModel):
     status: str
     app_name: str
     environment: str
+    # OCR backend diagnostics — shows whether PaddleOCR imported and, when
+    # it did not, the exact error (e.g. a missing libgomp/libGL shared
+    # library on a slim container image).
+    ocr: dict[str, Any] | None = None
 
 
 class UploadResponse(BaseModel):
@@ -257,11 +269,12 @@ class CompareResponse(BaseModel):
 
 
 @app.get('/api/health', response_model=HealthResponse)
-def health() -> dict[str, str]:
+def health() -> dict[str, Any]:
     return {
         'status': 'ok',
         'app_name': settings.app_name,
         'environment': settings.environment,
+        'ocr': _ocr_status(),
     }
 
 

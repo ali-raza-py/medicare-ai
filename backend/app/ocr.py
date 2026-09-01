@@ -45,20 +45,37 @@ try:
 except ImportError:
     _PYMUPDF_AVAILABLE = False
 
+# Populated when the PaddleOCR import fails; kept next to the import for
+# visibility. Surfaced via ocr_status().
+_PADDLE_IMPORT_ERROR: str | None = None
+
 try:
     from paddleocr import PaddleOCR
+    import paddleocr as _paddleocr_module
     _PADDLE_AVAILABLE = True
     # Detect major version — PaddleOCR 3.x has a completely different API.
-    _paddle_version = getattr(PaddleOCR, '__version__', None) or ''
+    _paddle_version = (
+        getattr(_paddleocr_module, '__version__', None)
+        or getattr(PaddleOCR, '__version__', None)
+        or ''
+    )
     try:
         _PADDLE_V3 = int(_paddle_version.split('.')[0]) >= 3
     except (ValueError, IndexError):
         # Fallback: check if predict() method exists (3.x) vs only ocr() (2.x)
         _PADDLE_V3 = hasattr(PaddleOCR, 'predict')
-except ImportError:
+except Exception as _paddle_import_exc:
+    # Missing system libraries (libgomp.so.1, libGL.so.1, ...) on slim Linux
+    # images surface as ImportError/OSError HERE, not as pip failures at
+    # build time. Catch broadly so a broken paddle install only disables
+    # image OCR instead of crashing the whole backend, and record the reason
+    # so /api/health and the startup log show exactly what is missing.
+    _PADDLE_IMPORT_ERROR = f'{type(_paddle_import_exc).__name__}: {_paddle_import_exc}'
+    logger.warning('PaddleOCR import failed (image OCR disabled): %s', _PADDLE_IMPORT_ERROR)
     PaddleOCR = None  # type: ignore[assignment,misc]
     _PADDLE_AVAILABLE = False
     _PADDLE_V3 = False
+    _paddle_version = ''
 
 try:
     import numpy as np
@@ -70,6 +87,17 @@ except ImportError:
 # OCR is available when any real extraction backend is present: PyMuPDF for
 # native PDF text, or PaddleOCR for images and scanned PDF pages.
 OCR_AVAILABLE = _PYMUPDF_AVAILABLE or _PADDLE_AVAILABLE
+
+
+def ocr_status() -> dict:
+    """Diagnostics for /api/health: which OCR backends are importable and,
+    when PaddleOCR is not, why its import failed."""
+    return {
+        'paddle_available': _PADDLE_AVAILABLE,
+        'paddleocr_version': _paddle_version or None,
+        'paddle_import_error': _PADDLE_IMPORT_ERROR,
+        'pymupdf_available': _PYMUPDF_AVAILABLE,
+    }
 
 _MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
