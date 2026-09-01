@@ -17,6 +17,7 @@ import {
   removeUploadedDocument,
 } from "@/lib/uploaded-documents";
 import { createClient } from "@/lib/supabase/client";
+import { apiUrl, isApiBaseConfigured } from "@/lib/api-base";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
@@ -77,16 +78,6 @@ export default function UploadPage() {
   const [dragActive, setDragActive] = useState(false);
   const [announcements, setAnnouncements] = useState<string[]>([]);
   const entriesRef = useRef<FileEntry[]>([]);
-
-  // API base URL selection:
-  // - If NEXT_PUBLIC_API_BASE_URL is set (e.g. https://medicare-ai-backend.onrender.com)
-  //   the frontend talks directly to that external backend.
-  // - If it is not set and NODE_ENV is production, fall back to the same origin
-  //   (legacy Vercel serverless backend behind the /api/* rewrite).
-  // - In local development the standalone uvicorn server on port 8000 is used.
-  const API_BASE =
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000');
 
   // Retrieve the current Supabase access token (null if not logged in)
   const getAccessToken = async (): Promise<string | null> => {
@@ -152,7 +143,11 @@ export default function UploadPage() {
       if (!err) announce(`Queued ${f.name}`);
       else announce(`Rejected ${f.name}: ${err}`);
     }
-    setEntries((prev) => [...newEntries, ...prev]);
+    setEntries((prev) => {
+      const next = [...newEntries, ...prev];
+      entriesRef.current = next;
+      return next;
+    });
     // auto-start uploads for valid files
     newEntries.forEach((e) => e.status === "idle" && startUpload(e.id));
   };
@@ -175,6 +170,22 @@ export default function UploadPage() {
     const entry = entriesRef.current.find((e) => e.id === id);
     if (!entry?.file) return;
 
+    if (!isApiBaseConfigured()) {
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.id === id
+            ? {
+                ...e,
+                status: "error",
+                error:
+                  "Backend URL is not configured. Set NEXT_PUBLIC_API_BASE_URL to the Railway API origin and redeploy Vercel.",
+              }
+            : e
+        )
+      );
+      return;
+    }
+
     const token = await getAccessToken();
 
     setEntries((prev) =>
@@ -190,10 +201,11 @@ export default function UploadPage() {
 
     // Use XHR for real progress tracking
     const xhr = new XMLHttpRequest();
-    const uploadUrl = `${API_BASE}/api/documents/upload`;
+    const uploadUrl = apiUrl('/api/documents/upload');
 
     xhr.open('POST', uploadUrl, true);
-    xhr.timeout = 60_000; // 60-second hard timeout
+    // OCR runs synchronously on Railway during this request; 60s is too short for PaddleOCR.
+    xhr.timeout = 300_000;
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
     xhr.upload.onprogress = (ev) => {
@@ -259,7 +271,7 @@ export default function UploadPage() {
             prev.map((e) => (e.id === id ? { ...e, progress: 95 } : e))
           );
 
-          const processResponse = await fetch(`${API_BASE}/api/documents/process`, {
+          const processResponse = await fetch(apiUrl('/api/documents/process'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

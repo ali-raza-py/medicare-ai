@@ -7,16 +7,7 @@ import {
   MedicalComparisonResponse,
   SymptomAnalysisRequest,
 } from '@/types/medical';
-
-// API base URL selection:
-// - If NEXT_PUBLIC_API_BASE_URL is set (e.g. https://medicare-ai-backend.onrender.com)
-//   the frontend talks directly to that external backend.
-// - If it is not set and NODE_ENV is production, fall back to the same origin
-//   (legacy Vercel serverless backend behind the /api/* rewrite).
-// - In local development the standalone uvicorn server on port 8000 is used.
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000');
+import { apiUrl } from '@/lib/api-base';
 
 /**
  * Return the current Supabase access token for authenticated backend requests.
@@ -48,7 +39,7 @@ export async function uploadAndProcessDocument(file: File): Promise<MedicalDocum
 
   const headers = await authHeaders();
 
-  const uploadResponse = await fetch(`${API_BASE}/api/documents/upload`, {
+  const uploadResponse = await fetch(apiUrl('/api/documents/upload'), {
     method: 'POST',
     headers,
     body: formData,
@@ -86,7 +77,7 @@ export async function uploadAndProcessDocument(file: File): Promise<MedicalDocum
   // (e.g. a future async backend). Already-extracted documents need nothing.
   if (uploaded.status !== 'processed') {
     const processHeaders = await authHeaders({ 'Content-Type': 'application/json' });
-    const processResponse = await fetch(`${API_BASE}/api/documents/process`, {
+    const processResponse = await fetch(apiUrl('/api/documents/process'), {
       method: 'POST',
       headers: processHeaders,
       body: JSON.stringify({ document_id: uploaded.document_id }),
@@ -108,7 +99,7 @@ export async function uploadAndProcessDocument(file: File): Promise<MedicalDocum
 
 export async function analyzeSymptoms(payload: SymptomAnalysisRequest): Promise<DiagnosticResponse> {
   try {
-    const response = await fetch(`${API_BASE}/api/diagnose`, {
+    const response = await fetch(apiUrl('/api/diagnose'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -140,7 +131,7 @@ export async function askMedicalQuestion(
   }
 
   const askHeaders = await authHeaders({ 'Content-Type': 'application/json' });
-  const response = await fetch(`${API_BASE}/api/medical-answer`, {
+  const response = await fetch(apiUrl('/api/medical-answer'), {
     method: 'POST',
     headers: askHeaders,
     body: JSON.stringify(body),
@@ -164,7 +155,7 @@ export async function compareReports(
   payload: MedicalComparisonRequest,
 ): Promise<MedicalComparisonResponse> {
   const compareHeaders = await authHeaders({ 'Content-Type': 'application/json' });
-  const response = await fetch(`${API_BASE}/api/compare-reports`, {
+  const response = await fetch(apiUrl('/api/compare-reports'), {
     method: 'POST',
     headers: compareHeaders,
     body: JSON.stringify(payload),
@@ -248,7 +239,7 @@ function normalizeTimelineEvents(raw: unknown): TimelineEvent[] {
 // documents actually stored by the FastAPI backend. No demo fallback —
 // failures surface as errors to the caller.
 export async function fetchTimeline(): Promise<TimelineEvent[]> {
-  const response = await fetch(`${API_BASE}/api/timeline`, {
+  const response = await fetch(apiUrl('/api/timeline'), {
     headers: await authHeaders({ Accept: 'application/json' }),
     cache: 'no-store',
   });
@@ -276,7 +267,7 @@ export type BackendDocument = {
 // Real backend endpoint: GET {API_BASE}/api/documents/{id}. Throws on 404 /
 // network failure so callers can show honest states.
 export async function fetchDocument(documentId: string): Promise<BackendDocument> {
-  const response = await fetch(`${API_BASE}/api/documents/${encodeURIComponent(documentId)}`, {
+  const response = await fetch(apiUrl(`/api/documents/${encodeURIComponent(documentId)}`), {
     headers: await authHeaders({ Accept: 'application/json' }),
     cache: 'no-store',
   });
@@ -355,7 +346,7 @@ function normalizeDocumentListItem(raw: unknown): BackendDocumentListItem | null
 export async function fetchDocuments(): Promise<BackendDocumentListItem[]> {
   try {
     const headers = await authHeaders();
-    const response = await fetch(`${API_BASE}/api/documents`, { headers });
+    const response = await fetch(apiUrl('/api/documents'), { headers });
     if (!response.ok) return [];
     const data: unknown = await response.json();
     // The backend returns a bare array of records; tolerate a
@@ -387,7 +378,7 @@ export type BackendDocumentDetail = BackendDocumentListItem & {
 export async function fetchDocumentDetail(documentId: string): Promise<BackendDocumentDetail | null> {
   try {
     const headers = await authHeaders();
-    const response = await fetch(`${API_BASE}/api/documents/${documentId}`, { headers });
+    const response = await fetch(apiUrl(`/api/documents/${documentId}`), { headers });
     if (!response.ok) return null;
     const raw: unknown = await response.json();
     // The backend detail endpoint returns bare records keyed by `document_id` /
