@@ -1,18 +1,19 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Search,
   ChevronDown,
   FileText,
+  AlertCircle,
+  Loader2,
   FlaskConical,
   ScanLine,
 } from "lucide-react";
 import DocumentCard from "@/components/DocumentCard";
 import { DEMO_DOCUMENTS, type DemoDocument } from "@/lib/demo-data";
-import { getAllDocuments } from "@/lib/uploaded-documents";
 import { KIND_LABELS } from "@/lib/document-constants";
-import { fetchDocuments, type BackendDocument } from "@/lib/api";
+import { fetchDocuments, type BackendDocumentListItem } from "@/lib/api";
 
 const FILTER_OPTIONS = [
   { value: "all", label: "All documents" },
@@ -28,55 +29,59 @@ export default function DocumentsPage() {
   >("all");
   const [filterOpen, setFilterOpen] = useState(false);
   const [allDocs, setAllDocs] = useState<DemoDocument[]>(DEMO_DOCUMENTS);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Merge demo documents, uploaded documents (localStorage), and backend documents
-  useEffect(() => {
-    const update = async () => {
-      // Start with local documents (demo + localStorage uploads)
-      const localDocs = getAllDocuments();
-
-      // Fetch backend documents
+  // Fetch ONLY backend documents for authenticated users
+  const fetchAndMerge = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Fetch backend documents — errors are now thrown, not silenced
       const backendDocs = await fetchDocuments();
-      const localIds = new Set(localDocs.map((d) => d.id));
 
-      // Convert backend docs to DemoDocument shape, skipping duplicates
-      const extraDocs: DemoDocument[] = [];
-      for (const bd of backendDocs) {
-        if (localIds.has(bd.id)) continue;
-        localIds.add(bd.id);
-        extraDocs.push({
-          id: bd.id,
-          name: bd.title,
-          kind: 'report',
-          date: bd.created_at
-            ? new Date(bd.created_at).toLocaleDateString('en-US', {
-                month: 'short', day: '2-digit', year: 'numeric',
-              })
-            : 'Recent',
-          pages: 1,
-          // Honest state mapping: a failed document must never show as
-          // perpetually "processing".
-          status:
-            bd.processing_status === 'failed'
-              ? 'failed'
-              : bd.processing_status === 'processed'
-                ? 'processed'
-                : 'processing',
-          flag: 'normal',
-        });
-      }
+      // Convert backend docs to DemoDocument shape
+      const docs: DemoDocument[] = backendDocs.map((bd) => ({
+        id: bd.id,
+        name: bd.title,
+        kind: 'report',
+        date: bd.created_at
+          ? new Date(bd.created_at).toLocaleDateString('en-US', {
+              month: 'short', day: '2-digit', year: 'numeric',
+            })
+          : 'Recent',
+        pages: 1,
+        status:
+          bd.processing_status === 'failed'
+            ? 'failed'
+            : bd.processing_status === 'processed'
+              ? 'processed'
+              : 'processing',
+        flag: 'normal',
+      }));
 
-      setAllDocs([...extraDocs, ...localDocs]);
-    };
-
-    update();
-    window.addEventListener("medcare-uploads-changed", update);
-    window.addEventListener("storage", update);
-    return () => {
-      window.removeEventListener("medcare-uploads-changed", update);
-      window.removeEventListener("storage", update);
-    };
+      setAllDocs(docs);
+    } catch (err) {
+      // Real backend error — show it to the user
+      setError(err instanceof Error ? err.message : 'Failed to load documents');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  // Fetch backend documents on mount and refetch on focus
+  useEffect(() => {
+    fetchAndMerge();
+    window.addEventListener("medcare-uploads-changed", fetchAndMerge);
+    window.addEventListener("storage", fetchAndMerge);
+    // Refetch on window focus to pick up backend changes from other tabs
+    window.addEventListener("focus", fetchAndMerge);
+    return () => {
+      window.removeEventListener("medcare-uploads-changed", fetchAndMerge);
+      window.removeEventListener("storage", fetchAndMerge);
+      window.removeEventListener("focus", fetchAndMerge);
+    };
+  }, [fetchAndMerge]);
 
   // Filter and search documents
   const filteredDocuments = useMemo(() => {
@@ -184,8 +189,36 @@ export default function DocumentsPage() {
         </div>
       </section>
 
-      {/* Documents grid */}
-      {filteredDocuments.length > 0 ? (
+      {/* Loading state */}
+      {loading ? (
+        <section className="flex items-center justify-center rounded-2xl border border-white/20 bg-gradient-to-br from-slate-500/5 to-slate-400/5 backdrop-blur-xl p-12 shadow-lg">
+          <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
+          <span className="ml-3 text-sm text-slate-600">Loading documents...</span>
+        </section>
+      ) : error ? (
+        /* Error state */
+        <section className="rounded-2xl border border-red-200 bg-red-50 backdrop-blur-xl p-6 shadow-lg">
+          <div className="flex gap-4">
+            <AlertCircle className="h-6 w-6 shrink-0 text-red-600 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-red-900">
+                Failed to load documents
+              </h3>
+              <p className="mt-1 text-sm text-red-700">
+                {error}
+              </p>
+              <button
+                onClick={() => {
+                  fetchAndMerge();
+                }}
+                className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : filteredDocuments.length > 0 ? (
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredDocuments.map((doc) => (
             <DocumentCard key={doc.id} doc={doc} />

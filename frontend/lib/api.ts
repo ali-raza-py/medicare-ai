@@ -344,26 +344,31 @@ function normalizeDocumentListItem(raw: unknown): BackendDocumentListItem | null
 }
 
 export async function fetchDocuments(): Promise<BackendDocumentListItem[]> {
-  try {
-    const headers = await authHeaders();
-    const response = await fetch(apiUrl('/api/documents'), { headers });
-    if (!response.ok) return [];
-    const data: unknown = await response.json();
-    // The backend returns a bare array of records; tolerate a
-    // `{ documents: [...] }` wrapper as well.
-    const records: unknown[] = Array.isArray(data)
-      ? data
-      : data !== null &&
-          typeof data === 'object' &&
-          Array.isArray((data as { documents?: unknown }).documents)
-        ? (data as { documents: unknown[] }).documents
-        : [];
-    return records
-      .map(normalizeDocumentListItem)
-      .filter((item): item is BackendDocumentListItem => item !== null);
-  } catch {
-    return [];
+  const headers = await authHeaders();
+  const response = await fetch(apiUrl('/api/documents'), { headers });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const parsed = await response.json();
+      if (parsed.detail) detail = parsed.detail;
+    } catch {
+      // non-JSON error body
+    }
+    throw new Error(`Failed to fetch documents: ${detail}`);
   }
+  const data: unknown = await response.json();
+  // The backend returns a bare array of records; tolerate a
+  // `{ documents: [...] }` wrapper as well.
+  const records: unknown[] = Array.isArray(data)
+    ? data
+    : data !== null &&
+        typeof data === 'object' &&
+        Array.isArray((data as { documents?: unknown }).documents)
+      ? (data as { documents: unknown[] }).documents
+      : [];
+  return records
+    .map(normalizeDocumentListItem)
+    .filter((item): item is BackendDocumentListItem => item !== null);
 }
 
 export type BackendDocumentDetail = BackendDocumentListItem & {
@@ -376,31 +381,36 @@ export type BackendDocumentDetail = BackendDocumentListItem & {
 };
 
 export async function fetchDocumentDetail(documentId: string): Promise<BackendDocumentDetail | null> {
-  try {
-    const headers = await authHeaders();
-    const response = await fetch(apiUrl(`/api/documents/${documentId}`), { headers });
-    if (!response.ok) return null;
-    const raw: unknown = await response.json();
-    // The backend detail endpoint returns bare records keyed by `document_id` /
-    // `processed` / `content_type` (same shape as the list endpoint), so
-    // normalize the fields here to keep `id`, `processing_status` and
-    // `document_type` consistent with what callers expect.
-    const item = normalizeDocumentListItem(raw);
-    if (!item) return null;
-    const record = (raw ?? {}) as Record<string, unknown>;
-    return {
-      ...item,
-      text: typeof record.text === 'string' ? record.text : '',
-      metadata:
-        typeof record.metadata === 'object' && record.metadata !== null
-          ? (record.metadata as Record<string, unknown>)
-          : {},
-      processed: record.processed === true,
-      status: normalizeProcessingStatus(record.status ?? record.processing_status),
-      page_count: typeof record.page_count === 'number' ? record.page_count : null,
-      source: 'local',
-    };
-  } catch {
-    return null;
+  const headers = await authHeaders();
+  const response = await fetch(apiUrl(`/api/documents/${documentId}`), { headers });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const parsed = await response.json();
+      if (parsed.detail) detail = parsed.detail;
+    } catch {
+      // non-JSON error body
+    }
+    throw new Error(`Failed to fetch document: ${detail}`);
   }
+  const raw: unknown = await response.json();
+  // The backend detail endpoint returns bare records keyed by `document_id` /
+  // `processed` / `content_type` (same shape as the list endpoint), so
+  // normalize the fields here to keep `id`, `processing_status` and
+  // `document_type` consistent with what callers expect.
+  const item = normalizeDocumentListItem(raw);
+  if (!item) return null;
+  const record = (raw ?? {}) as Record<string, unknown>;
+  return {
+    ...item,
+    text: typeof record.text === 'string' ? record.text : '',
+    metadata:
+      typeof record.metadata === 'object' && record.metadata !== null
+        ? (record.metadata as Record<string, unknown>)
+        : {},
+    processed: record.processed === true,
+    status: normalizeProcessingStatus(record.status ?? record.processing_status),
+    page_count: typeof record.page_count === 'number' ? record.page_count : null,
+    source: 'local',
+  };
 }

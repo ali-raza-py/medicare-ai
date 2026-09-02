@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -44,23 +44,35 @@ export default function DocumentDetailPage() {
   // knows name/size/type — never the extracted text or processing status.
   const [backendDoc, setBackendDoc] = useState<BackendDocumentDetail | null>(null);
   const [loading, setLoading] = useState(!demoDoc && !!id);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchDoc = useCallback(() => {
     if (demoDoc || !id) {
       setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
-    fetchDocumentDetail(id).then((doc) => {
-      if (cancelled) return;
-      setBackendDoc(doc);
-      setLoading(false);
-    });
+    setError(null);
+    fetchDocumentDetail(id)
+      .then((doc) => {
+        if (cancelled) return;
+        setBackendDoc(doc);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to load document');
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
   }, [demoDoc, id]);
+
+  useEffect(() => {
+    fetchDoc();
+  }, [fetchDoc]);
 
   // Ignore a backend record that belongs to a previously-viewed document so
   // stale data is never flashed when navigating between detail pages.
@@ -71,6 +83,43 @@ export default function DocumentDetailPage() {
       <div className="flex items-center justify-center p-12">
         <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
         <span className="ml-2 text-sm text-slate-600">Loading document...</span>
+      </div>
+    );
+  }
+
+  if (error && !demoDoc && !uploaded) {
+    return (
+      <div className="mx-auto w-full max-w-6xl">
+        <div className="rounded-2xl border border-red-200 bg-red-50 backdrop-blur-xl p-8 shadow-lg">
+          <div className="flex gap-4">
+            <AlertTriangle className="h-6 w-6 shrink-0 text-red-600 mt-0.5" />
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-red-900">
+                Failed to load document
+              </h2>
+              <p className="mt-1 text-sm text-red-700">
+                {error}
+              </p>
+              <div className="mt-6 flex gap-2">
+                <button
+                  onClick={() => {
+                    fetchDoc();
+                  }}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+                >
+                  Retry
+                </button>
+                <Link
+                  href="/documents"
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-300 transition-colors"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
