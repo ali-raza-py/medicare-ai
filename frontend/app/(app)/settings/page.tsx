@@ -21,10 +21,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { displayNameFromEmail, logout } from "@/lib/auth";
 import { useSession } from "@/lib/session";
-import {
-  clearUploadedDocuments,
-  useUploadedDocuments,
-} from "@/lib/uploaded-documents";
+
 
 type AccountStatus = "loading" | "error" | "ready";
 
@@ -73,8 +70,7 @@ export default function SettingsPage() {
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
-  const localUploads = useUploadedDocuments();
-  const [cacheCleared, setCacheCleared] = useState(false);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -182,10 +178,7 @@ export default function SettingsPage() {
     }
   };
 
-  const clearLocalCache = () => {
-    clearUploadedDocuments();
-    setCacheCleared(true);
-  };
+
 
   const displayName =
     account?.metadataName ??
@@ -452,36 +445,11 @@ export default function SettingsPage() {
                 </p>
               </div>
               <p>
-                This browser also keeps a small cache of upload metadata (file
-                name, size, type and timestamp — never document contents). You
-                can clear it at any time. Permanent deletion of documents from
-                the backend is not available in this version of the app, so no
-                delete option is shown here.
+                Permanent deletion of documents from the backend is not available
+                in this version of the app, so no delete option is shown here.
               </p>
             </div>
 
-            <div className="mt-5 border-t border-white/20 pt-4">
-              <button
-                type="button"
-                onClick={clearLocalCache}
-                disabled={localUploads.length === 0}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
-              >
-                <Database className="h-4 w-4" aria-hidden="true" />
-                Clear local upload cache
-                {localUploads.length > 0 && (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                    {localUploads.length}
-                  </span>
-                )}
-              </button>
-              {cacheCleared && localUploads.length === 0 && (
-                <p className="mt-2 flex items-center gap-1.5 text-sm text-emerald-700">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Local upload cache cleared.
-                </p>
-              )}
-            </div>
           </section>
         </>
       )}
