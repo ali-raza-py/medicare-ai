@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,7 +14,6 @@ import {
   Mail,
   Settings,
   ShieldCheck,
-  SlidersHorizontal,
   User,
   XCircle,
 } from "lucide-react";
@@ -34,8 +33,6 @@ type AccountInfo = {
   metadataName: string | null;
   expiresAt: string | null;
 };
-
-const SHOW_TECH_KEY = "medcare-settings-show-tech";
 
 function formatDateTime(value: string | null): string {
   if (!value) return "Unknown";
@@ -64,8 +61,6 @@ export default function SettingsPage() {
   const [accountError, setAccountError] = useState<string | null>(null);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [accountReloadKey, setAccountReloadKey] = useState(0);
-
-  const [showTech, setShowTech] = useState(false);
 
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -135,34 +130,6 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, [accountReloadKey]);
-
-  // Restore the local "show technical details" preference (per-browser).
-  useEffect(() => {
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      try {
-        setShowTech(window.localStorage.getItem(SHOW_TECH_KEY) === "1");
-      } catch {
-        setShowTech(false);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const toggleTech = useCallback(() => {
-    setShowTech((current) => {
-      const next = !current;
-      try {
-        window.localStorage.setItem(SHOW_TECH_KEY, next ? "1" : "0");
-      } catch {
-        // storage blocked — preference simply won't persist
-      }
-      return next;
-    });
-  }, []);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -367,56 +334,6 @@ export default function SettingsPage() {
                   )}
                 </div>
               </>
-            )}
-          </section>
-          {/* Preferences */}
-          <section className="rounded-2xl border border-white/20 bg-white/40 backdrop-blur-xl p-6 shadow-lg">
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-teal-600" aria-hidden="true" />
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Preferences
-              </h3>
-            </div>
-
-            <div className="mt-4 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-slate-900">
-                  Show technical account details
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                  Displays your user ID and session expiry below. Saved in this
-                  browser only — MediCare AI has no server-side preference sync.
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={showTech}
-                aria-label="Show technical account details"
-                onClick={toggleTech}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 ${
-                  showTech ? "bg-teal-600" : "bg-slate-300"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    showTech ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
-
-            {showTech && account && (
-              <dl className="mt-4 grid gap-2 rounded-xl border border-white/20 bg-white/40 p-3">
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">User ID</dt>
-                  <dd className="break-all text-sm text-slate-900">{account.userId}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Raw provider</dt>
-                  <dd className="text-sm text-slate-900">{account.provider ?? "unknown"}</dd>
-                </div>
-              </dl>
             )}
           </section>
 
