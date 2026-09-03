@@ -104,9 +104,18 @@ export default function ComparePage() {
     setReloadKey((key) => key + 1);
   }, []);
 
+  // Only documents with successfully extracted text can be compared.
+  const processedDocs = documents.filter(
+    (doc) => doc.processing_status === "processed"
+  );
+
   const selectedLeft = documents.find((doc) => doc.id === leftId) ?? null;
   const selectedRight = documents.find((doc) => doc.id === rightId) ?? null;
-  const canCompare = Boolean(leftId && rightId && !comparing);
+  const canCompare = Boolean(
+    leftId && rightId && !comparing &&
+    selectedLeft?.processing_status === "processed" &&
+    selectedRight?.processing_status === "processed"
+  );
 
   const resetResult = () => {
     setResult(null);
@@ -142,10 +151,8 @@ export default function ComparePage() {
     } finally {
       setComparing(false);
     }
-  }, [leftId, rightId, comparing]);
-
-  const leftOptions = documents.filter((doc) => doc.id !== rightId);
-  const rightOptions = documents.filter((doc) => doc.id !== leftId);
+  }, [leftId, rightId, comparing]);            const leftOptions = processedDocs.filter((doc) => doc.id !== rightId);
+  const rightOptions = processedDocs.filter((doc) => doc.id !== leftId);
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
@@ -218,6 +225,37 @@ export default function ComparePage() {
         </section>
       )}
 
+      {docsStatus === "ready" &&
+        documents.length > 0 &&
+        processedDocs.length < 2 && (
+        <section className="rounded-2xl border border-amber-500/20 bg-amber-500/5 backdrop-blur-xl p-8 text-center shadow-lg">
+          <div className="flex justify-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 border border-amber-500/20">
+              <AlertTriangle className="h-7 w-7" aria-hidden="true" />
+            </span>
+          </div>
+          <h3 className="mt-4 text-base font-semibold text-slate-900">
+            Not enough processed documents
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">
+            You need at least two documents with successfully extracted text to
+            run a comparison. Currently {processedDocs.length} of{' '}
+            {documents.length} document{documents.length !== 1 ? 's' : ''} ready.
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Documents that are still processing or failed extraction cannot be
+            compared.
+          </p>
+          <Link
+            href="/upload"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:from-teal-500 hover:to-cyan-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+          >
+            <UploadCloud className="h-4 w-4" aria-hidden="true" />
+            Upload more documents
+          </Link>
+        </section>
+      )}
+
 
       {docsStatus === "ready" && documents.length > 0 && (
         <>
@@ -280,9 +318,10 @@ export default function ComparePage() {
               </div>
             </div>
 
-            {documents.length === 1 && (
+            {processedDocs.length < 2 && documents.length >= 2 && (
               <p className="mt-3 text-sm text-amber-700">
-                You need at least two documents to run a comparison.
+                You need at least two processed documents to run a comparison.
+                {processedDocs.length === 1 && ' One document is ready.'}
               </p>
             )}
 
@@ -313,7 +352,18 @@ export default function ComparePage() {
                   className="mt-0.5 h-4 w-4 shrink-0 text-rose-600"
                   aria-hidden="true"
                 />
-                <p className="text-sm text-rose-700">{compareError}</p>
+                <div className="flex-1">
+                  <p className="text-sm text-rose-700">{compareError}</p>
+                  <button
+                    type="button"
+                    onClick={runComparison}
+                    disabled={comparing}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-500/10"
+                  >
+                    <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                    Try again
+                  </button>
+                </div>
               </div>
             )}
           </section>

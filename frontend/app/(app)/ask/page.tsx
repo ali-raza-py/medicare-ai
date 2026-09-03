@@ -19,8 +19,6 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { askMedicalQuestion, fetchDocuments } from "@/lib/api";
-import { getAllDocuments } from "@/lib/uploaded-documents";
-import { DEMO_DOCUMENT_DETAILS } from "@/lib/demo-data";
 import type { MedicalAnswerResponse, MedicalDocumentRecord } from "@/types/medical";
 import type { BackendDocumentListItem } from "@/lib/api";
 
@@ -41,27 +39,6 @@ type ChatMessage = {
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-
-const toMedicalDocumentRecord = (doc: {
-  id: string;
-  name: string;
-  kind?: string;
-  date?: string;
-  status?: "processed" | "processing" | "failed";
-  flag?: string;
-}): MedicalDocumentRecord => ({
-  id: doc.id,
-  title: doc.name,
-  type: doc.kind ?? "report",
-  date: doc.date ?? new Date().toISOString().slice(0, 10),
-  status:
-    doc.status === "failed"
-      ? "Extraction failed"
-      : doc.status === "processing"
-        ? "Needs review"
-        : "Ready",
-  summary: "Relevant patient record document loaded for question answering.",
-});
 
 const backendToMedicalDocumentRecord = (doc: BackendDocumentListItem): MedicalDocumentRecord => ({
   id: doc.id,
@@ -267,26 +244,20 @@ export default function AskPage() {
   useEffect(() => {
     let cancelled = false;
 
-    // Load real backend documents first; if that fails or returns nothing,
-    // fall back to the demo documents so the page is never empty.
+    // Load real backend documents — no demo fallback.
     fetchDocuments()
       .then((backendDocs) => {
         if (cancelled) return;
-        const records = backendDocs.map(backendToMedicalDocumentRecord);
-        if (records.length > 0) {
-          setDocuments(records.slice(0, 6));
-        } else {
-          const fallback = getAllDocuments().slice(0, 6).map(toMedicalDocumentRecord);
-          setDocuments(fallback);
-        }
+        const records = backendDocs
+          .filter((doc) => doc.processing_status === "processed")
+          .map(backendToMedicalDocumentRecord);
+        setDocuments(records.slice(0, 6));
         setDocsStatus("ready");
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setDocsError(err instanceof Error ? err.message : "Could not load your documents.");
         setDocsStatus("error");
-        const fallback = getAllDocuments().slice(0, 6).map(toMedicalDocumentRecord);
-        setDocuments(fallback);
       });
 
     return () => {
@@ -317,38 +288,9 @@ export default function AskPage() {
     );
   };
 
-  const buildContext = (): string[] => {
-    const parts: string[] = [];
-    for (const doc of selectedDocuments) {
-      // For real backend documents the server already holds the extracted OCR text
-      // and will inject it via RAG retrieval — no frontend context needed.
-      // For demo documents (doc-001 etc.) we still attach the hardcoded details
-      // so the AI has something to work with even without a backend record.
-      const detail = DEMO_DOCUMENT_DETAILS[doc.id];
-      if (detail) {
-        const lines = [
-          `Document: ${doc.title} (${doc.type}, ${doc.date})`,
-          `Summary: ${detail.summary}`,
-        ];
-        if (detail.values) {
-          lines.push("Values:");
-          for (const v of detail.values) {
-            const flagLabel = v.flag !== "normal" ? ` [${v.flag.toUpperCase()}]` : "";
-            lines.push(`  - ${v.label}: ${v.value} (ref: ${v.referenceRange})${flagLabel}`);
-          }
-        }
-        if (detail.impression) {
-          lines.push(`Impression: ${detail.impression}`);
-        }
-        parts.push(lines.join("\n"));
-      } else {
-        // Real backend document — just send its ID; the backend resolves the
-        // full record with extracted text and performs chunk retrieval.
-        parts.push(`Document: ${doc.title} (${doc.type}, ${doc.date})`);
-      }
-    }
-    return parts;
-  };
+  // No frontend context needed — the backend resolves document text by ID
+  // and performs chunk retrieval via RAG.
+  const buildContext = (): string[] => [];
 
   const handleSubmit = async () => {
     const trimmed = question.trim();
@@ -459,6 +401,16 @@ export default function AskPage() {
         <div className="flex items-center justify-center gap-3 rounded-2xl border border-white/40 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-sm">
           <Loader2 className="h-4 w-4 animate-spin text-teal-600" aria-hidden="true" />
           <p className="text-sm font-medium text-slate-600">Loading your documents…</p>
+        </div>
+      )}
+
+      {docsStatus === "ready" && documents.length === 0 && (
+        <div className="flex items-center justify-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 shadow-sm backdrop-blur-sm">
+          <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+          <p className="text-sm text-amber-700">
+            No processed documents available. Upload and process documents
+            first, then try asking a question.
+          </p>
         </div>
       )}
 
