@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import {
   fetchTimeline,
+  TimelineHttpError,
   type TimelineEvent,
   type TimelineEventType,
 } from "@/lib/api";
@@ -40,7 +41,12 @@ const TYPE_STYLES: Record<TimelineEventType, string> = {
   "Medical Report": "bg-emerald-500/10 text-emerald-700 border border-emerald-500/20",
 };
 
-type Status = "loading" | "error" | "ready";
+type Status =
+  | "loading"
+  | "ready"
+  | "unauthorized"
+  | "not-found"
+  | "error";
 
 function formatDay(isoDate: string): string {
   const parsed = new Date(isoDate);
@@ -76,8 +82,6 @@ export default function TimelinePage() {
 
   useEffect(() => {
     let cancelled = false;
-    setStatus("loading");
-    setErrorMsg(null);
     fetchTimeline()
       .then((result) => {
         if (cancelled) return;
@@ -86,17 +90,34 @@ export default function TimelinePage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setErrorMsg(
-          err instanceof Error ? err.message : "Something went wrong."
-        );
-        setStatus("error");
+        if (err instanceof TimelineHttpError) {
+          setErrorMsg(err.message);
+          if (err.status === 401 || err.status === 403) {
+            setStatus("unauthorized");
+          } else if (err.status === 404) {
+            setStatus("not-found");
+          } else {
+            setStatus("error");
+          }
+        } else {
+          setErrorMsg(
+            err instanceof Error ? err.message : "Something went wrong."
+          );
+          setStatus("error");
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [reloadKey]);
 
-  const retry = useCallback(() => setReloadKey((key) => key + 1), []);
+  // Resetting to the loading state here (an event handler, not an effect) keeps
+  // the effect body free of synchronous setState calls.
+  const retry = useCallback(() => {
+    setStatus("loading");
+    setErrorMsg(null);
+    setReloadKey((key) => key + 1);
+  }, []);
 
   // Newest first, grouped by calendar day.
   const grouped = useMemo(() => {
@@ -138,18 +159,31 @@ export default function TimelinePage() {
         </div>
       )}
 
-      {/* Error state */}
-      {status === "error" && (
+      {/* Error states: 401/403, 404, and everything else */}
+      {(status === "unauthorized" ||
+        status === "not-found" ||
+        status === "error") && (
         <div
           className="flex flex-col items-center gap-3 rounded-2xl border border-red-200/40 bg-red-50/50 p-12 text-center shadow-lg backdrop-blur-xl"
           role="alert"
         >
           <AlertTriangle className="h-7 w-7 text-red-600" aria-hidden="true" />
           <p className="text-sm font-medium text-red-800">
-            The timeline could not be loaded.
+            {status === "unauthorized"
+              ? "You are not signed in or your session has expired."
+              : status === "not-found"
+                ? "The timeline service could not be found."
+                : "The timeline could not be loaded."}
           </p>
-          {errorMsg && (
-            <p className="max-w-md text-sm text-red-600">{errorMsg}</p>
+          <p className="max-w-md text-sm text-red-600">
+            {status === "unauthorized"
+              ? "Sign in again to view your health timeline, then retry."
+              : status === "not-found"
+                ? "The backend does not expose the timeline endpoint this page calls."
+                : errorMsg}
+          </p>
+          {status === "not-found" && errorMsg && (
+            <p className="max-w-md text-xs text-red-500">{errorMsg}</p>
           )}
           <button
             type="button"

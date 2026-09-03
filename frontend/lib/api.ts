@@ -199,6 +199,21 @@ type TimelineApiResponse = {
   events: TimelineEvent[];
 };
 
+/** HTTP-level failure from the timeline endpoint, carrying the status code so
+ * callers can distinguish auth problems (401/403) from routing problems
+ * (404) and everything else. */
+export class TimelineHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, statusText: string, detail?: string) {
+    super(
+      `Timeline request failed (${status} ${statusText})${detail ? `: ${detail}` : ''}.`,
+    );
+    this.name = 'TimelineHttpError';
+    this.status = status;
+  }
+}
+
 const TIMELINE_EVENT_TYPES: TimelineEventType[] = [
   'Lab Result',
   'Diagnosis',
@@ -244,7 +259,15 @@ export async function fetchTimeline(): Promise<TimelineEvent[]> {
     cache: 'no-store',
   });
   if (!response.ok) {
-    throw new Error(`Timeline request failed (${response.status} ${response.statusText}).`);
+    // Extract FastAPI detail message when present
+    let detail: string | undefined;
+    try {
+      const parsed = await response.json();
+      if (typeof parsed.detail === 'string') detail = parsed.detail;
+    } catch {
+      // non-JSON error body
+    }
+    throw new TimelineHttpError(response.status, response.statusText, detail);
   }
   const body = (await response.json()) as TimelineApiResponse;
   return normalizeTimelineEvents(body.events);
