@@ -1,0 +1,22 @@
+# MediCare AI
+
+MediCare AI is a web application that helps users organize medical records and review the information in those records with AI-assisted, evidence-grounded workflows.
+
+## Product
+
+- Upload medical documents such as lab reports, imaging results, and prescriptions
+- Organize records into a searchable personal health timeline
+- Ask questions about the records already uploaded to the user's account
+- Compare relevant medical reports to see what changed between them, with evidence
+
+## Important
+
+MediCare AI is an informational software tool. It does not provide medical advice, diagnosis, or treatment and is not a replacement for a qualified healthcare professional.
+
+## Links
+
+- [Home](https://medicare-ai-sigma.vercel.app/)
+- [About](https://medicare-ai-sigma.vercel.app/about)
+- [Contact](https://medicare-ai-sigma.vercel.app/contact)
+- [Privacy](https://medicare-ai-sigma.vercel.app/privacy)
+- [Terms](https://medicare-ai-sigma.vercel.app/terms)
