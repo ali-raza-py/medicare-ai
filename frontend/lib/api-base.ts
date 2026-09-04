@@ -1,11 +1,10 @@
 /**
- * Railway FastAPI origin for browser requests.
+ * FastAPI origin for browser requests.
  *
- * NEXT_PUBLIC_API_BASE_URL is inlined at Vercel build time. If it is missing
- * in production, the client used to fall back to "" and POST to
- * same-origin /api/... on Vercel (404 "Not Found") instead of Railway.
- * Trailing slashes are stripped so the env value never produces
- * https://host.up.railway.app//api/...
+ * Local development always falls back to the backend on localhost. Vercel
+ * should provide NEXT_PUBLIC_API_BASE_URL in its project environment when it
+ * needs to call a deployed backend. Trailing slashes are stripped so the env
+ * value never produces a double slash before /api/.
  */
 function normalizeApiBase(raw: string | undefined): string {
   const trimmed = raw?.trim() ?? '';
@@ -17,7 +16,7 @@ const fromEnv = normalizeApiBase(process.env.NEXT_PUBLIC_API_BASE_URL);
 
 export const API_BASE =
   fromEnv ||
-  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000');
+  'http://localhost:8000';
 
 export function isApiBaseConfigured(): boolean {
   return API_BASE.length > 0;
