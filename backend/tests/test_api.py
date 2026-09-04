@@ -187,6 +187,70 @@ def test_user_a_cannot_access_user_b_document() -> None:
     assert ok.json()['document_id'] == doc_id_b
 
 
+def test_owner_can_delete_document_and_local_artifacts() -> None:
+    upload_response = client.post(
+        '/api/documents/upload',
+        files={'file': ('delete-me.pdf', b'%PDF-1.4\nprivate medical text\n%%EOF\n', 'application/pdf')},
+        headers=_auth_headers("owner@example.com"),
+    )
+    document_id = upload_response.json()['document_id']
+    assert store.get(document_id) is not None
+
+    response = client.delete(
+        f'/api/documents/{document_id}',
+        headers=_auth_headers("owner@example.com"),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {'document_id': document_id, 'deleted': True}
+    assert store.get(document_id) is None
+    assert client.get(
+        f'/api/documents/{document_id}',
+        headers=_auth_headers("owner@example.com"),
+    ).status_code == 404
+
+
+def test_other_user_cannot_delete_document() -> None:
+    upload_response = client.post(
+        '/api/documents/upload',
+        files={'file': ('protected.pdf', b'%PDF-1.4\nprivate text\n%%EOF\n', 'application/pdf')},
+        headers=_auth_headers("owner@example.com"),
+    )
+    document_id = upload_response.json()['document_id']
+
+    response = client.delete(
+        f'/api/documents/{document_id}',
+        headers=_auth_headers("other@example.com"),
+    )
+
+    assert response.status_code == 403
+    assert store.get(document_id) is not None
+
+
+def test_each_user_can_delete_their_own_document() -> None:
+    first_upload = client.post(
+        '/api/documents/upload',
+        files={'file': ('first.pdf', b'%PDF-1.4\nfirst private text\n%%EOF\n', 'application/pdf')},
+        headers=_auth_headers("first@example.com"),
+    )
+    second_upload = client.post(
+        '/api/documents/upload',
+        files={'file': ('second.pdf', b'%PDF-1.4\nsecond private text\n%%EOF\n', 'application/pdf')},
+        headers=_auth_headers("second@example.com"),
+    )
+    first_document_id = first_upload.json()['document_id']
+    second_document_id = second_upload.json()['document_id']
+
+    response = client.delete(
+        f'/api/documents/{second_document_id}',
+        headers=_auth_headers("second@example.com"),
+    )
+
+    assert response.status_code == 200
+    assert store.get(second_document_id) is None
+    assert store.get(first_document_id) is not None
+
+
 def test_unauthorized_upload_rejected() -> None:
     response = client.post(
         '/api/documents/upload',

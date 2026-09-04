@@ -15,14 +15,18 @@ except ImportError:
 NO_READABLE_TEXT = 'No readable text detected in the uploaded file.'
 
 
-def extract_text_structured(file_bytes: bytes, filename: str) -> dict | None:
+def extract_text_structured(
+    file_bytes: bytes | None,
+    filename: str,
+    file_path: str | None = None,
+) -> dict | None:
     """Run full OCR extraction and return structured result dict.
 
     Returns None when OCR dependencies are not available.
     """
     if not OCR_AVAILABLE:
         return None
-    result = extract_document(file_bytes, filename)
+    result = extract_document(file_bytes, filename, file_path=file_path)
     return result.to_dict()
 
 

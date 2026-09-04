@@ -394,6 +394,23 @@ export async function fetchDocuments(): Promise<BackendDocumentListItem[]> {
     .filter((item): item is BackendDocumentListItem => item !== null);
 }
 
+export async function deleteDocument(documentId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/api/documents/${encodeURIComponent(documentId)}`), {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const parsed = await response.json();
+      if (typeof parsed.detail === 'string') detail = parsed.detail;
+    } catch {
+      // Keep the HTTP status when the server returned a non-JSON response.
+    }
+    throw new Error(`Failed to delete document: ${detail}`);
+  }
+}
+
 export type BackendDocumentDetail = BackendDocumentListItem & {
   text: string;
   metadata: Record<string, unknown>;

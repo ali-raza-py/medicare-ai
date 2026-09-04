@@ -4,6 +4,7 @@ import asyncio
 import io
 import logging
 import os
+import gc
 import threading
 import time
 from dataclasses import dataclass, field
@@ -110,6 +111,7 @@ _IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
 
 _ocr_engine: 'PaddleOCR | None' = None
 _ocr_lock = threading.Lock()
+_ocr_job_lock = threading.Lock()
 
 
 def _get_ocr_engine() -> 'PaddleOCR':
@@ -310,13 +312,13 @@ def _parse_ocr_result(raw_result) -> tuple[str, float, list[OCRBoxResult]]:
 # PDF extraction
 # ---------------------------------------------------------------------------
 
-def _extract_pdf(file_bytes: bytes) -> OCRDocumentResult:
+def _extract_pdf(source: bytes | str) -> OCRDocumentResult:
     """Extract text from a PDF: native text first, then PaddleOCR for scans."""
     errors: list[str] = []
     pages: list[OCRPageResult] = []
 
     try:
-        doc = fitz.open(stream=file_bytes, filetype='pdf')
+        doc = fitz.open(stream=source, filetype='pdf') if isinstance(source, bytes) else fitz.open(source)
     except Exception as exc:
         logger.error('Failed to open PDF: %s', exc)
         return _empty_result([f'Failed to open PDF: {exc}'])
@@ -324,67 +326,82 @@ def _extract_pdf(file_bytes: bytes) -> OCRDocumentResult:
     native_count = 0
     ocr_count = 0
 
-    for page_idx in range(len(doc)):
-        page = doc[page_idx]
-        page_number = page_idx + 1
+    try:
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            page_number = page_idx + 1
 
-        # Try native text extraction first
-        native_text = page.get_text('text').strip()
+            # Try native text extraction first
+            native_text = page.get_text('text').strip()
 
-        if len(native_text) >= 50:
+            if len(native_text) >= 50:
             # Native extraction — good enough
-            pages.append(OCRPageResult(
+                pages.append(OCRPageResult(
                 page_number=page_number,
                 text=native_text,
                 confidence=1.0,
                 boxes=[],
                 method='native',
             ))
-            native_count += 1
-            continue
+                native_count += 1
+                continue
 
         # PaddleOCR attempt — render page at 300 DPI
-        if _PADDLE_AVAILABLE and _HELPERS_AVAILABLE:
-            try:
-                pixmap = page.get_pixmap(dpi=300)
-                img_array = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
-                    (pixmap.height, pixmap.width, pixmap.n),
-                )
+            if _PADDLE_AVAILABLE and _HELPERS_AVAILABLE:
+                pixmap = None
+                img_array = None
+                try:
+                    # Keep the source dimensions bounded; very large scans can
+                    # otherwise create multi-hundred-megabyte NumPy buffers.
+                    matrix = fitz.Matrix(2.0, 2.0)
+                    rect = page.rect
+                    max_dimension = max(rect.width * 2.0, rect.height * 2.0)
+                    if max_dimension > 2400:
+                        scale = 2400 / max_dimension
+                        matrix = fitz.Matrix(2.0 * scale, 2.0 * scale)
+                    pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+                    img_array = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+                        (pixmap.height, pixmap.width, pixmap.n),
+                    )
                 # Convert RGBA to RGB if needed
-                if pixmap.n == 4:
-                    img_array = img_array[:, :, :3]
+                    if pixmap.n == 4:
+                        img_array = img_array[:, :, :3]
 
-                engine = _get_ocr_engine()
-                if _PADDLE_V3:
-                    raw_result = list(engine.predict(img_array))
-                else:
-                    raw_result = engine.ocr(img_array, cls=True)
-                text, confidence, boxes = _parse_ocr_result(raw_result)
+                    engine = _get_ocr_engine()
+                    if _PADDLE_V3:
+                        raw_result = list(engine.predict(img_array))
+                    else:
+                        raw_result = engine.ocr(img_array, cls=True)
+                    text, confidence, boxes = _parse_ocr_result(raw_result)
 
-                pages.append(OCRPageResult(
+                    pages.append(OCRPageResult(
                     page_number=page_number,
                     text=text,
                     confidence=confidence,
                     boxes=boxes,
                     method='ocr',
                 ))
-                ocr_count += 1
-                continue
-            except Exception as exc:
-                logger.warning('PaddleOCR failed on page %d: %s', page_number, exc)
-                errors.append(f'PaddleOCR failed on page {page_number}: {exc}')
+                    ocr_count += 1
+                    continue
+                except Exception as exc:
+                    logger.warning('PaddleOCR failed on page %d: %s', page_number, type(exc).__name__)
+                    errors.append(f'PaddleOCR failed on page {page_number}: {type(exc).__name__}')
+                finally:
+                    del img_array, pixmap
+                    gc.collect()
 
         # No backend produced text — keep whatever native text we got (may be empty)
-        pages.append(OCRPageResult(
+            pages.append(OCRPageResult(
             page_number=page_number,
             text=native_text,
             confidence=1.0 if native_text else 0.0,
             boxes=[],
             method='native',
         ))
-        native_count += 1
-
-    doc.close()
+            native_count += 1
+            del page
+    finally:
+        doc.close()
 
     # Determine extraction method
     if native_count > 0 and ocr_count == 0:
@@ -418,16 +435,17 @@ def _extract_pdf(file_bytes: bytes) -> OCRDocumentResult:
 # Image extraction
 # ---------------------------------------------------------------------------
 
-def _extract_image(file_bytes: bytes, filename: str) -> OCRDocumentResult:
+def _extract_image(source: bytes | str, filename: str) -> OCRDocumentResult:
     """Extract text from an image file using PaddleOCR."""
     errors: list[str] = []
 
     # PaddleOCR path (local / Render deployments)
     if _PADDLE_AVAILABLE and _HELPERS_AVAILABLE:
         try:
-            img = Image.open(io.BytesIO(file_bytes))
+            img = Image.open(io.BytesIO(source)) if isinstance(source, bytes) else Image.open(source)
             if img.mode != 'RGB':
                 img = img.convert('RGB')
+            img.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
             img_array = np.array(img)
         except Exception as exc:
             logger.error('Failed to open image: %s', exc)
@@ -441,7 +459,7 @@ def _extract_image(file_bytes: bytes, filename: str) -> OCRDocumentResult:
                     raw_result = engine.ocr(img_array, cls=True)
                 text, confidence, boxes = _parse_ocr_result(raw_result)
                 if text.strip():
-                    return OCRDocumentResult(
+                    result = OCRDocumentResult(
                         pages=[OCRPageResult(
                             page_number=1,
                             text=text,
@@ -456,11 +474,20 @@ def _extract_image(file_bytes: bytes, filename: str) -> OCRDocumentResult:
                         processing_time_ms=0.0,  # caller fills this in
                         errors=errors,
                     )
+                    del raw_result, img_array, img
+                    gc.collect()
+                    return result
                 # Paddle found no text — an honest failure, not a fake success.
                 errors.append('PaddleOCR returned no text for this image')
             except Exception as exc:
-                logger.error('PaddleOCR failed on image: %s', exc)
-                errors.append(f'PaddleOCR failed: {exc}')
+                logger.error('PaddleOCR failed on image: %s', type(exc).__name__)
+                errors.append(f'PaddleOCR failed: {type(exc).__name__}')
+            finally:
+                if 'img_array' in locals():
+                    del img_array
+                if 'img' in locals():
+                    del img
+                gc.collect()
     elif not _PADDLE_AVAILABLE:
         errors.append('PaddleOCR not available in this environment')
 
@@ -471,7 +498,7 @@ def _extract_image(file_bytes: bytes, filename: str) -> OCRDocumentResult:
 # Public entry points
 # ---------------------------------------------------------------------------
 
-def extract_document(file_bytes: bytes, filename: str) -> OCRDocumentResult:
+def extract_document(file_bytes: bytes | None, filename: str, file_path: str | None = None) -> OCRDocumentResult:
     """Synchronous document extraction entry point.
 
     Validates inputs, dispatches to the appropriate extractor, and wraps
@@ -487,12 +514,12 @@ def extract_document(file_bytes: bytes, filename: str) -> OCRDocumentResult:
 
     try:
         # Validate empty
-        if not file_bytes:
+        if not file_bytes and not file_path:
             elapsed = (time.perf_counter() - start) * 1000
             return _empty_result(['Empty file'], processing_time_ms=elapsed)
 
         # Validate size
-        if len(file_bytes) > _MAX_FILE_SIZE:
+        if file_bytes is not None and len(file_bytes) > _MAX_FILE_SIZE:
             elapsed = (time.perf_counter() - start) * 1000
             return _empty_result(['File too large'], processing_time_ms=elapsed)
 
@@ -500,9 +527,21 @@ def extract_document(file_bytes: bytes, filename: str) -> OCRDocumentResult:
         ext = os.path.splitext(filename)[1].lower()
 
         if ext in _PDF_EXTENSIONS:
-            result = _extract_pdf(file_bytes)
+            if file_path:
+                source: bytes | str = file_path
+            elif file_bytes is not None:
+                source = file_bytes
+            else:
+                raise ValueError('A temporary file path is required for PDF OCR')
+            result = _extract_pdf(source)
         elif ext in _IMAGE_EXTENSIONS:
-            result = _extract_image(file_bytes, filename)
+            if file_path:
+                source = file_path
+            elif file_bytes is not None:
+                source = file_bytes
+            else:
+                raise ValueError('A temporary file path is required for image OCR')
+            result = _extract_image(source, filename)
         else:
             elapsed = (time.perf_counter() - start) * 1000
             return _empty_result(
@@ -517,8 +556,6 @@ def extract_document(file_bytes: bytes, filename: str) -> OCRDocumentResult:
         logger.error('Unexpected error in extract_document: %s', exc, exc_info=True)
         elapsed = (time.perf_counter() - start) * 1000
         return _empty_result([f'Unexpected error: {exc}'], processing_time_ms=elapsed)
-
-
 async def async_extract_document(file_bytes: bytes, filename: str) -> OCRDocumentResult:
     """Async wrapper that runs extract_document in a thread."""
     return await asyncio.to_thread(extract_document, file_bytes, filename)

@@ -292,6 +292,117 @@ def upload_file_to_storage(
         return False
 
 
+def upload_file_path_to_storage(
+    file_path: str,
+    storage_path: str,
+    content_type: str = 'application/octet-stream',
+    *,
+    user_token: str | None = None,
+) -> bool:
+    """Upload a disk-backed file without duplicating it in process memory."""
+    client = _get_client(user_token)
+    if not client:
+        return False
+
+    try:
+        client.storage.from_('medical-documents').upload(
+            path=storage_path,
+            file=file_path,
+            file_options={
+                'content-type': content_type,
+                'upsert': 'true',
+            },
+        )
+        return True
+    except Exception as exc:
+        logger.warning('Supabase storage file upload failed: %s', type(exc).__name__)
+        return False
+
+
+def delete_file_from_storage(storage_path: str, *, user_token: str | None = None) -> bool:
+    """Delete one private storage object and report whether it succeeded."""
+    client = _get_client(user_token)
+    if not client:
+        return False
+    try:
+        client.storage.from_('medical-documents').remove([storage_path])
+        return True
+    except Exception as exc:
+        logger.warning('Supabase storage delete failed: %s', type(exc).__name__)
+        return False
+
+
+def _list_storage_files(client: Any, prefix: str) -> list[str]:
+    """Recursively list file paths below a storage prefix."""
+    bucket = client.storage.from_('medical-documents')
+    files: list[str] = []
+    entries = bucket.list(path=prefix.rstrip('/')) or []
+    for entry in entries:
+        name = str(entry.get('name') or '') if isinstance(entry, dict) else ''
+        if not name:
+            continue
+        path = f"{prefix.rstrip('/')}/{name}"
+        # Storage returns folders without an id; recurse so processed files in
+        # nested paths are deleted as well.
+        if isinstance(entry, dict) and not entry.get('id'):
+            files.extend(_list_storage_files(client, f'{path}/'))
+        else:
+            files.append(path)
+    return files
+
+
+def delete_document_storage(
+    storage_path: str,
+    *,
+    user_id: str,
+    document_id: str,
+    user_token: str | None = None,
+) -> bool:
+    """Delete the original and all generated objects for one owned document.
+
+    The allowed prefixes cover the current user-scoped layout and the legacy
+    document-scoped layout. Rejecting every other path prevents a malformed
+    row from widening the deletion scope.
+    """
+    client = _get_client(user_token)
+    if not client:
+        return False
+
+    current_prefix = f'{user_id}/{document_id}/'
+    legacy_prefix = f'{document_id}/'
+    if storage_path and not storage_path.startswith((current_prefix, legacy_prefix)):
+        logger.error('Refusing storage delete outside document prefix: %s', storage_path)
+        return False
+
+    try:
+        # Sweep both layouts. Older uploads used {document_id}/ while current
+        # uploads use {user_id}/{document_id}/; either can contain nested OCR
+        # or processed objects. An empty result is a successful no-op.
+        paths = set(_list_storage_files(client, current_prefix))
+        paths.update(_list_storage_files(client, legacy_prefix))
+        if storage_path:
+            paths.add(storage_path)
+        if paths:
+            client.storage.from_('medical-documents').remove(sorted(paths))
+        return True
+    except Exception as exc:
+        logger.warning('Supabase document storage cleanup failed: %s', type(exc).__name__)
+        return False
+
+
+def delete_document_record(document_id: str, user_id: str) -> bool:
+    """Delete a document row only when it belongs to the supplied user."""
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table('documents').delete().eq('id', document_id).eq('user_id', user_id).execute()
+        return True
+    except Exception as exc:
+        logger.warning('Supabase document delete failed: %s', type(exc).__name__)
+        return False
+
+
 def get_file_url(storage_path: str, *, user_token: str | None = None) -> str | None:
     """Return a signed/public URL for a file in Supabase Storage."""
     client = _get_client(user_token)

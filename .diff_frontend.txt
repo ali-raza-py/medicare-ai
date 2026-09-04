@@ -1,0 +1,149 @@
+﻿diff --git a/frontend/app/(app)/documents/page.tsx b/frontend/app/(app)/documents/page.tsx
+index 6da9351..ad295b1 100644
+--- a/frontend/app/(app)/documents/page.tsx
++++ b/frontend/app/(app)/documents/page.tsx
+@@ -13,7 +13,7 @@ import {
+ import DocumentCard from "@/components/DocumentCard";
+ import { DEMO_DOCUMENTS, type DemoDocument } from "@/lib/demo-data";
+ import { KIND_LABELS } from "@/lib/document-constants";
+-import { fetchDocuments, type BackendDocumentListItem } from "@/lib/api";
++import { deleteDocument, fetchDocuments, type BackendDocumentListItem } from "@/lib/api";
+ 
+ const FILTER_OPTIONS = [
+   { value: "all", label: "All documents" },
+@@ -31,6 +31,7 @@ export default function DocumentsPage() {
+   const [allDocs, setAllDocs] = useState<DemoDocument[]>(DEMO_DOCUMENTS);
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState<string | null>(null);
++  const [deletingId, setDeletingId] = useState<string | null>(null);
+ 
+   // Fetch ONLY backend documents for authenticated users
+   const fetchAndMerge = useCallback(async () => {
+@@ -83,6 +84,20 @@ export default function DocumentsPage() {
+     };
+   }, [fetchAndMerge]);
+ 
++  const handleDelete = async (documentId: string) => {
++    if (!window.confirm("This will permanently delete this upload and all associated OCR/processed data. This action cannot be undone.")) return;
++    setDeletingId(documentId);
++    setError(null);
++    try {
++      await deleteDocument(documentId);
++      await fetchAndMerge();
++    } catch (err) {
++      setError(err instanceof Error ? err.message : "Failed to delete document");
++    } finally {
++      setDeletingId(null);
++    }
++  };
++
+   // Filter and search documents
+   const filteredDocuments = useMemo(() => {
+     return allDocs.filter((doc) => {
+@@ -221,7 +236,7 @@ export default function DocumentsPage() {
+       ) : filteredDocuments.length > 0 ? (
+         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+           {filteredDocuments.map((doc) => (
+-            <DocumentCard key={doc.id} doc={doc} />
++            <DocumentCard key={doc.id} doc={doc} onDelete={deletingId ? undefined : handleDelete} />
+           ))}
+         </section>
+       ) : (
+diff --git a/frontend/components/DocumentCard.tsx b/frontend/components/DocumentCard.tsx
+index 6de3180..4f6bf6d 100644
+--- a/frontend/components/DocumentCard.tsx
++++ b/frontend/components/DocumentCard.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import Link from "next/link";
++import { Trash2 } from "lucide-react";
+ import type { DemoDocument } from "@/lib/demo-data";
+ import { KIND_ICONS, FLAG_LABELS, FLAG_STYLES } from "@/lib/document-constants";
+ 
+@@ -20,7 +21,7 @@ const STATUS_CHIP_LABELS: Record<string, string> = {
+   uploaded: "Queued",
+ };
+ 
+-export default function DocumentCard({ doc }: { doc: DemoDocument }) {
++export default function DocumentCard({ doc, onDelete }: { doc: DemoDocument; onDelete?: (id: string) => void }) {
+   const KindIcon = KIND_ICONS[doc.kind];
+   const chipStyle = STATUS_CHIP_STYLES[doc.status];
+ 
+@@ -32,10 +33,7 @@ export default function DocumentCard({ doc }: { doc: DemoDocument }) {
+   }[doc.kind];
+ 
+   return (
+-    <Link
+-      href={`/documents/${doc.id}`}
+-      className={`group block rounded-2xl border border-white/20 bg-gradient-to-br ${gradientClass} backdrop-blur-xl p-4 shadow-xl transition-all duration-300 hover:border-white/30 hover:shadow-2xl hover:scale-105`}
+-    >
++    <article className={`group rounded-2xl border border-white/20 bg-gradient-to-br ${gradientClass} backdrop-blur-xl p-4 shadow-xl transition-all duration-300 hover:border-white/30 hover:shadow-2xl hover:scale-105`}>
+       <div className="flex items-start gap-3">
+         {/* Document type icon */}
+         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/10 text-slate-600 group-hover:bg-white/20 group-hover:text-teal-600 transition-all duration-300 backdrop-blur-sm border border-white/10">
+@@ -44,6 +42,7 @@ export default function DocumentCard({ doc }: { doc: DemoDocument }) {
+ 
+         {/* Content */}
+         <div className="min-w-0 flex-1">
++          <Link href={`/documents/${doc.id}`} className="block">
+           <h3 className="truncate text-sm font-semibold text-slate-900 group-hover:text-teal-700 transition-colors">
+             {doc.name}
+           </h3>
+@@ -63,6 +62,7 @@ export default function DocumentCard({ doc }: { doc: DemoDocument }) {
+               </span>
+             )}
+           </div>
++          </Link>
+         </div>
+ 
+         {/* Flag badge - glassmorphic */}
+@@ -71,7 +71,19 @@ export default function DocumentCard({ doc }: { doc: DemoDocument }) {
+         >
+           {FLAG_LABELS[doc.flag]}
+         </span>
++        {onDelete && (
++          <button
++            type="button"
++            aria-label={`Delete Permanently ${doc.name}`}
++            title="Delete Permanently"
++            onClick={() => onDelete(doc.id)}
++            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-2 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600"
++          >
++            <Trash2 className="h-4 w-4" />
++            <span>Delete Permanently</span>
++          </button>
++        )}
+       </div>
+-    </Link>
++    </article>
+   );
+ }
+diff --git a/frontend/lib/api.ts b/frontend/lib/api.ts
+index 0290243..fd6ffa1 100644
+--- a/frontend/lib/api.ts
++++ b/frontend/lib/api.ts
+@@ -394,6 +394,23 @@ export async function fetchDocuments(): Promise<BackendDocumentListItem[]> {
+     .filter((item): item is BackendDocumentListItem => item !== null);
+ }
+ 
++export async function deleteDocument(documentId: string): Promise<void> {
++  const response = await fetch(apiUrl(`/api/documents/${encodeURIComponent(documentId)}`), {
++    method: 'DELETE',
++    headers: await authHeaders(),
++  });
++  if (!response.ok) {
++    let detail = `HTTP ${response.status}`;
++    try {
++      const parsed = await response.json();
++      if (typeof parsed.detail === 'string') detail = parsed.detail;
++    } catch {
++      // Keep the HTTP status when the server returned a non-JSON response.
++    }
++    throw new Error(`Failed to delete document: ${detail}`);
++  }
++}
++
+ export type BackendDocumentDetail = BackendDocumentListItem & {
+   text: string;
+   metadata: Record<string, unknown>;

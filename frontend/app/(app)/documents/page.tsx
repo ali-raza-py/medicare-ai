@@ -13,7 +13,7 @@ import {
 import DocumentCard from "@/components/DocumentCard";
 import { DEMO_DOCUMENTS, type DemoDocument } from "@/lib/demo-data";
 import { KIND_LABELS } from "@/lib/document-constants";
-import { fetchDocuments, type BackendDocumentListItem } from "@/lib/api";
+import { deleteDocument, fetchDocuments, type BackendDocumentListItem } from "@/lib/api";
 
 const FILTER_OPTIONS = [
   { value: "all", label: "All documents" },
@@ -31,6 +31,7 @@ export default function DocumentsPage() {
   const [allDocs, setAllDocs] = useState<DemoDocument[]>(DEMO_DOCUMENTS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Fetch ONLY backend documents for authenticated users
   const fetchAndMerge = useCallback(async () => {
@@ -82,6 +83,20 @@ export default function DocumentsPage() {
       window.removeEventListener("focus", fetchAndMerge);
     };
   }, [fetchAndMerge]);
+
+  const handleDelete = async (documentId: string) => {
+    if (!window.confirm("This will permanently delete this upload and all associated OCR/processed data. This action cannot be undone.")) return;
+    setDeletingId(documentId);
+    setError(null);
+    try {
+      await deleteDocument(documentId);
+      await fetchAndMerge();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete document");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // Filter and search documents
   const filteredDocuments = useMemo(() => {
@@ -221,7 +236,7 @@ export default function DocumentsPage() {
       ) : filteredDocuments.length > 0 ? (
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredDocuments.map((doc) => (
-            <DocumentCard key={doc.id} doc={doc} />
+            <DocumentCard key={doc.id} doc={doc} onDelete={deletingId ? undefined : handleDelete} />
           ))}
         </section>
       ) : (

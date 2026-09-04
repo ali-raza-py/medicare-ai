@@ -121,6 +121,14 @@ class InMemoryDocumentStore:
             setattr(document, key, value)
         self.add(document)
 
+    def delete(self, document_id: str) -> None:
+        self.documents.pop(document_id, None)
+        self.index.pop(document_id, None)
+        try:
+            self.base_dir.joinpath(f"{document_id}.json").unlink()
+        except FileNotFoundError:
+            pass
+
 
 def build_document_store(base_dir: str | Path = './.uploads') -> InMemoryDocumentStore:
     store = InMemoryDocumentStore(base_dir)
