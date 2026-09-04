@@ -222,7 +222,7 @@ function LoginCard() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 aria-invalid={Boolean(errors.email)}
-                className={`mt-1.5 w-full rounded-lg border px-3.5 py-2.5 text-sm shadow-sm outline-none transition-colors placeholder:text-slate-400 focus:ring-2 ${
+                className={`mt-1.5 w-full rounded-lg border px-3.5 py-2.5 text-sm shadow-sm outline-none transition-colors placeholder:text-slate-500 focus:ring-2 ${
                   errors.email
                     ? "border-red-300 focus:border-red-400 focus:ring-red-100"
                     : "border-slate-300 focus:border-teal-500 focus:ring-teal-100"
@@ -249,7 +249,7 @@ function LoginCard() {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   aria-invalid={Boolean(errors.password)}
-                  className={`w-full rounded-lg border px-3.5 py-2.5 pr-11 text-sm shadow-sm outline-none transition-colors placeholder:text-slate-400 focus:ring-2 ${
+                  className={`w-full rounded-lg border px-3.5 py-2.5 pr-11 text-sm shadow-sm outline-none transition-colors placeholder:text-slate-500 focus:ring-2 ${
                     errors.password
                       ? "border-red-300 focus:border-red-400 focus:ring-red-100"
                       : "border-slate-300 focus:border-teal-500 focus:ring-teal-100"
@@ -289,7 +289,7 @@ function LoginCard() {
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
                   aria-invalid={Boolean(errors.confirmPassword)}
-                  className={`mt-1.5 w-full rounded-lg border px-3.5 py-2.5 text-sm shadow-sm outline-none transition-colors placeholder:text-slate-400 focus:ring-2 ${
+                  className={`mt-1.5 w-full rounded-lg border px-3.5 py-2.5 text-sm shadow-sm outline-none transition-colors placeholder:text-slate-500 focus:ring-2 ${
                     errors.confirmPassword
                       ? "border-red-300 focus:border-red-400 focus:ring-red-100"
                       : "border-slate-300 focus:border-teal-500 focus:ring-teal-100"
