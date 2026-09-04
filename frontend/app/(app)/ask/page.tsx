@@ -30,9 +30,6 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   evidence?: { documentName: string; snippet: string; sourceId: string }[];
-  confidence?: string;
-  provider?: string;
-  model?: string;
   loading?: boolean;
 };
 
@@ -53,34 +50,6 @@ const backendToMedicalDocumentRecord = (doc: BackendDocumentListItem): MedicalDo
         : "Ready",
   summary: "Relevant patient record document loaded for question answering.",
 });
-
-function confidenceColor(confidence?: string) {
-  if (!confidence) return "text-slate-400 bg-slate-500/10";
-  switch (confidence.toLowerCase()) {
-    case "high":
-      return "text-emerald-400 bg-emerald-500/10";
-    case "medium":
-      return "text-amber-400 bg-amber-500/10";
-    case "low":
-      return "text-rose-400 bg-rose-500/10";
-    default:
-      return "text-slate-400 bg-slate-500/10";
-  }
-}
-
-function confidenceDot(confidence?: string) {
-  if (!confidence) return "bg-slate-400";
-  switch (confidence.toLowerCase()) {
-    case "high":
-      return "bg-emerald-400";
-    case "medium":
-      return "bg-amber-400";
-    case "low":
-      return "bg-rose-400";
-    default:
-      return "bg-slate-400";
-  }
-}
 
 const SUGGESTED_QUESTIONS = [
   { icon: "🩸", text: "What do my blood test results indicate?" },
@@ -116,14 +85,14 @@ function EvidenceSources({
   const visible = expanded ? evidence : evidence.slice(0, 2);
 
   return (
-    <div className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.03]">
+    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-white/[0.03]"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-slate-100"
       >
         <BookOpen className="h-3.5 w-3.5 text-teal-400" />
-        <span className="text-xs font-semibold tracking-wide text-slate-300">
+        <span className="text-xs font-semibold tracking-wide text-slate-600">
           {evidence.length} Source{evidence.length !== 1 ? "s" : ""}
         </span>
         <span className="ml-auto">
@@ -138,13 +107,13 @@ function EvidenceSources({
         {visible.map((e, j) => (
           <div
             key={j}
-            className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2"
           >
             <div className="flex items-center gap-1.5">
               <FileText className="h-3 w-3 shrink-0 text-teal-500" />
-              <p className="text-xs font-medium text-teal-400">{e.documentName}</p>
+              <p className="text-xs font-medium text-teal-700">{e.documentName}</p>
             </div>
-            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">
+            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">
               &ldquo;{e.snippet}&rdquo;
             </p>
           </div>
@@ -172,7 +141,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-sm ${
           isUser
             ? "bg-gradient-to-br from-teal-500 to-cyan-600 text-white"
-            : "bg-slate-800 border border-white/10 text-teal-400"
+            : "border border-teal-100 bg-teal-50 text-teal-600"
         }`}
       >
         {isUser ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
@@ -184,7 +153,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           className={`rounded-2xl px-4 py-3 shadow-sm ${
             isUser
               ? "bg-gradient-to-br from-teal-600 to-teal-700 text-white"
-              : "border border-white/10 bg-slate-900/80 text-slate-100"
+              : "border border-slate-200 bg-white text-slate-700"
           }`}
         >
           {msg.loading ? (
@@ -194,28 +163,11 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           )}
         </div>
 
-        {/* Evidence & confidence (assistant only) */}
+        {/* Evidence sources (assistant only) */}
         {!msg.loading && msg.role === "assistant" && (
-          <>
-            {msg.evidence && msg.evidence.length > 0 && (
-              <EvidenceSources evidence={msg.evidence} />
-            )}
-            {msg.confidence && (
-              <div className="mt-2 flex items-center gap-2 px-1">
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[0.7rem] font-medium ${confidenceColor(msg.confidence)}`}
-                >
-                  <span className={`h-1.5 w-1.5 rounded-full ${confidenceDot(msg.confidence)}`} />
-                  {msg.confidence} confidence
-                </span>
-                {msg.provider && msg.provider !== "fallback" && (
-                  <span className="text-[0.65rem] text-slate-500">
-                    via {msg.provider}
-                  </span>
-                )}
-              </div>
-            )}
-          </>
+          msg.evidence && msg.evidence.length > 0 && (
+            <EvidenceSources evidence={msg.evidence} />
+          )
         )}
       </div>
     </div>
@@ -330,9 +282,6 @@ export default function AskPage() {
             snippet: e.snippet,
             sourceId: e.sourceId,
           })),
-          confidence: response.confidence,
-          provider: response.provider,
-          model: response.model,
         },
       ]);
     } catch (submitError) {
@@ -483,16 +432,16 @@ export default function AskPage() {
       )}
 
       {/* ── Chat area ──────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800/50 bg-slate-950 shadow-xl shadow-slate-900/20">
+      <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-200/60">
         {/* Toolbar */}
-        <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
-          <ShieldCheck className="h-3.5 w-3.5 text-teal-500" />
-          <span className="text-xs font-medium text-teal-400/80">
+        <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+          <ShieldCheck className="h-3.5 w-3.5 text-teal-600" />
+          <span className="text-xs font-medium text-teal-700">
             Evidence-based answers
           </span>
           {messages.length > 0 && (
             <div className="ml-auto flex items-center gap-2">
-              <MessageSquare className="h-3 w-3 text-slate-600" />
+              <MessageSquare className="h-3 w-3 text-slate-400" />
               <span className="text-xs text-slate-500">
                 {messages.filter((m) => m.role === "assistant" && !m.loading).length} response
                 {messages.filter((m) => m.role === "assistant" && !m.loading).length !== 1
@@ -516,10 +465,10 @@ export default function AskPage() {
               </div>
 
               <div>
-                <p className="text-base font-semibold text-slate-200">
+                  <p className="text-base font-semibold text-slate-800">
                   How can I help you today?
                 </p>
-                <p className="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-slate-400">
+                  <p className="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-slate-500">
                   Ask a medical question or select reference documents above
                   for answers grounded in your health records.
                 </p>
@@ -532,11 +481,11 @@ export default function AskPage() {
                     key={q.text}
                     type="button"
                     onClick={() => setQuestion(q.text)}
-                    className="group flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-left text-sm text-slate-300 transition-all duration-200 hover:border-teal-500/30 hover:bg-teal-500/5 hover:text-teal-300"
+                    className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-600 transition-all duration-200 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700"
                   >
                     <span className="text-base">{q.icon}</span>
                     <span className="flex-1">{q.text}</span>
-                    <Lightbulb className="h-3.5 w-3.5 shrink-0 text-slate-600 transition group-hover:text-teal-500" />
+                    <Lightbulb className="h-3.5 w-3.5 shrink-0 text-slate-400 transition group-hover:text-teal-500" />
                   </button>
                 ))}
               </div>
@@ -552,13 +501,13 @@ export default function AskPage() {
         {/* Error bar */}
         {error && (
           <div className="mx-4 mb-2 animate-slide-up">
-            <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-950/40 px-3.5 py-2.5">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
-              <p className="flex-1 text-xs leading-relaxed text-red-300">{error}</p>
+            <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <p className="flex-1 text-xs leading-relaxed text-red-700">{error}</p>
               <button
                 type="button"
                 onClick={() => setError(null)}
-                className="shrink-0 rounded-md p-0.5 text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
+                className="shrink-0 rounded-md p-0.5 text-red-500 transition hover:bg-red-100 hover:text-red-700"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -567,7 +516,7 @@ export default function AskPage() {
         )}
 
         {/* Input area */}
-        <div className="border-t border-white/[0.06] bg-slate-950/80 p-3 sm:p-4">
+        <div className="border-t border-slate-100 bg-slate-50/80 p-3 sm:p-4">
           <div className="flex items-end gap-2.5">
             <div className="relative flex-1">
               <textarea
@@ -581,7 +530,7 @@ export default function AskPage() {
                     ? "Ask about the selected records..."
                     : "Ask a medical question..."
                 }
-                className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 pr-12 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all duration-200 focus:border-teal-500/40 focus:bg-white/[0.07] focus:ring-2 focus:ring-teal-500/10"
+                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm text-slate-800 placeholder-slate-400 outline-none transition-all duration-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-500/10"
                 disabled={loading}
               />
               <button
@@ -590,7 +539,7 @@ export default function AskPage() {
                 disabled={loading || !question.trim()}
                 className={`absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200 ${
                   loading || !question.trim()
-                    ? "cursor-not-allowed bg-slate-800 text-slate-600"
+                    ? "cursor-not-allowed bg-slate-200 text-slate-400"
                     : "bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40"
                 }`}
               >
@@ -602,10 +551,10 @@ export default function AskPage() {
               </button>
             </div>
           </div>
-          <p className="mt-2 text-center text-[0.7rem] text-slate-600">
-            Press <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 font-mono text-slate-400">Enter</kbd> to send
+          <p className="mt-2 text-center text-[0.7rem] text-slate-400">
+            Press <kbd className="rounded border border-slate-200 bg-white px-1 py-0.5 font-mono text-slate-500">Enter</kbd> to send
             {" "}&middot;{" "}
-            <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 font-mono text-slate-400">Shift+Enter</kbd> for new line
+            <kbd className="rounded border border-slate-200 bg-white px-1 py-0.5 font-mono text-slate-500">Shift+Enter</kbd> for new line
           </p>
         </div>
       </div>
