@@ -236,7 +236,12 @@ export default function DocumentsPage() {
       ) : filteredDocuments.length > 0 ? (
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredDocuments.map((doc) => (
-            <DocumentCard key={doc.id} doc={doc} onDelete={deletingId ? undefined : handleDelete} />
+            <DocumentCard
+              key={doc.id}
+              doc={doc}
+              onDelete={handleDelete}
+              isDeleting={deletingId === doc.id}
+            />
           ))}
         </section>
       ) : (

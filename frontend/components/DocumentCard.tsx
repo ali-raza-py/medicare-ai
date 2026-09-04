@@ -21,7 +21,15 @@ const STATUS_CHIP_LABELS: Record<string, string> = {
   uploaded: "Queued",
 };
 
-export default function DocumentCard({ doc, onDelete }: { doc: DemoDocument; onDelete?: (id: string) => void }) {
+export default function DocumentCard({
+  doc,
+  onDelete,
+  isDeleting = false,
+}: {
+  doc: DemoDocument;
+  onDelete?: (id: string) => void;
+  isDeleting?: boolean;
+}) {
   const KindIcon = KIND_ICONS[doc.kind];
   const chipStyle = STATUS_CHIP_STYLES[doc.status];
 
@@ -77,9 +85,10 @@ export default function DocumentCard({ doc, onDelete }: { doc: DemoDocument; onD
             aria-label={`Delete Permanently ${doc.name}`}
             title="Delete Permanently"
             onClick={() => onDelete(doc.id)}
+            disabled={isDeleting}
             className="inline-flex shrink-0 items-center rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className={`h-4 w-4 ${isDeleting ? "animate-pulse" : ""}`} />
           </button>
         )}
       </div>
