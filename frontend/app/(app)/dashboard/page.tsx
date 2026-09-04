@@ -12,25 +12,15 @@ import {
   Upload,
   Sparkles,
 } from "lucide-react";
-import StatCard from "@/components/StatCard";
+import DashboardDocuments from "@/components/DashboardDocuments";
 import { displayNameFromEmail } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { API_BASE } from "@/lib/api-base";
+import { formatShortDate } from "@/lib/format-date";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
-
-type ApiDocument = {
-  id: string;
-  title: string;
-  filename: string;
-  content_type?: string;
-  processing_status?: string;
-  created_at?: string | null;
-  chunks?: number;
-  status?: string;
-};
 
 type ApiTimelineEvent = {
   id: string;
@@ -40,36 +30,6 @@ type ApiTimelineEvent = {
   description: string;
   documentId: string;
 };
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-function formatShortDate(isoDate: string): string {
-  const parsed = new Date(isoDate);
-  if (Number.isNaN(parsed.getTime())) return isoDate;
-  return parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-  });
-}
-
-function formatDocDate(isoDate: string | null): string {
-  if (!isoDate) return "Unknown date";
-  return formatShortDate(isoDate);
-}
-
-function isThisMonth(isoDate: string | null): boolean {
-  if (!isoDate) return false;
-  const d = new Date(isoDate);
-  if (Number.isNaN(d.getTime())) return false;
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth()
-  );
-}
 
 const TIMELINE_ICONS: Record<string, typeof FileText> = {
   "Lab Result": FlaskConical,
@@ -83,32 +43,6 @@ const TIMELINE_ICONS: Record<string, typeof FileText> = {
 /* ------------------------------------------------------------------ */
 /*  Server-side data fetching                                          */
 /* ------------------------------------------------------------------ */
-
-async function fetchServerDocuments(
-  accessToken: string,
-): Promise<ApiDocument[]> {
-  try {
-    const res = await fetch(`${API_BASE}/api/documents`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
-    if (!res.ok) return [];
-    const data: unknown = await res.json();
-    const records: unknown[] = Array.isArray(data)
-      ? data
-      : data !== null &&
-          typeof data === "object" &&
-          Array.isArray((data as { documents?: unknown }).documents)
-        ? (data as { documents: unknown[] }).documents
-        : [];
-    return records.filter(
-      (r): r is ApiDocument =>
-        typeof r === "object" && r !== null && typeof (r as Record<string, unknown>).id === "string",
-    );
-  } catch {
-    return [];
-  }
-}
 
 async function fetchServerTimeline(
   accessToken: string,
@@ -172,8 +106,9 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  /* Fetch real data from the backend if authenticated */
-  let documents: ApiDocument[] = [];
+  /* Fetch real timeline data from the backend if authenticated.
+     Document stats / recent documents are fetched client-side via the
+     existing fetchDocuments() helper (see DashboardDocuments). */
   let timelineEvents: ApiTimelineEvent[] = [];
 
   if (user) {
@@ -182,10 +117,7 @@ export default async function DashboardPage() {
     } = await supabase.auth.getSession();
     const token = session?.access_token;
     if (token) {
-      [documents, timelineEvents] = await Promise.all([
-        fetchServerDocuments(token),
-        fetchServerTimeline(token),
-      ]);
+      timelineEvents = await fetchServerTimeline(token);
     }
   }
 
@@ -206,24 +138,6 @@ export default async function DashboardPage() {
       .slice(0, 2)
       .join("")
       .toUpperCase() || "MC";
-
-  /* Honest stats computed from real backend data */
-  const processedDocs = documents.filter(
-    (d) =>
-      d.processing_status === "processed" || d.status === "processed",
-  );
-  const totalDocuments = processedDocs.length;
-  const docsThisMonth = processedDocs.filter((d) =>
-    isThisMonth(d.created_at ?? null),
-  ).length;
-  const recentDocs = [...documents]
-    .sort((a, b) => {
-      const dateA = new Date(a.created_at ?? 0).getTime();
-      const dateB = new Date(b.created_at ?? 0).getTime();
-      return dateB - dateA;
-    })
-    .slice(0, 5);
-  const lastUpload = documents.length > 0 ? recentDocs[0]?.created_at : null;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
@@ -289,127 +203,12 @@ export default async function DashboardPage() {
         })}
       </section>
 
-      {/* Stats — real data only */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Documents"
-          value={totalDocuments}
-          hint={
-            docsThisMonth > 0
-              ? `+${docsThisMonth} this month`
-              : "All processed"
-          }
-          icon={FileText}
-        />
-        <StatCard
-          label="Timeline events"
-          value={timelineEvents.length}
-          hint="From uploaded records"
-          icon={Clock}
-        />
-        <StatCard
-          label="Last upload"
-          value={lastUpload ? formatShortDate(lastUpload) : "None yet"}
-          icon={Clock}
-        />
-        <StatCard
-          label="Processing status"
-          value={
-            documents.length === 0
-              ? "No documents"
-              : `${processedDocs.length}/${documents.length}`
-          }
-          hint={
-            documents.length > 0
-              ? documents.length > processedDocs.length
-                ? `${documents.length - processedDocs.length} pending`
-                : "All processed"
-              : "Upload to get started"
-          }
-          icon={FileText}
-        />
-      </section>
-
-      {/* Recent documents + timeline preview */}
-      <section className="grid gap-6 lg:grid-cols-5">
-        {/* Recent documents — real data */}
-        <div className="rounded-2xl border border-white/20 bg-white/40 shadow-lg backdrop-blur-xl lg:col-span-3">
-          <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-            <h3 className="text-sm font-semibold text-slate-900">
-              Recent documents
-            </h3>
-            <Link
-              href="/documents"
-              className="flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-800 transition-colors"
-            >
-              View all <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-          {recentDocs.length === 0 ? (
-            <div className="px-5 py-8 text-center">
-              <FileText className="mx-auto h-8 w-8 text-slate-300" />
-              <p className="mt-2 text-sm text-slate-500">
-                No documents yet. Upload your first report to get started.
-              </p>
-              <Link
-                href="/upload"
-                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 transition-colors"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                Upload document
-              </Link>
-            </div>
-          ) : (
-            <ul className="divide-y divide-white/10">
-              {recentDocs.map((doc) => {
-                const isProcessed =
-                  doc.processing_status === "processed" ||
-                  doc.status === "processed";
-                const isFailed =
-                  doc.processing_status === "failed" ||
-                  doc.status === "failed";
-                return (
-                  <li
-                    key={doc.id}
-                    className="px-5 py-3.5 hover:bg-white/20 transition-colors"
-                  >
-                    <Link
-                      href={`/documents/${doc.id}`}
-                      className="group block"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
-                          <FileText className="h-4 w-4" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">
-                            {doc.title || doc.filename}
-                          </p>
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            {formatDocDate(doc.created_at ?? null)}
-                          </p>
-                        </div>
-                        {!isProcessed && (
-                          <span
-                            className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                              isFailed
-                                ? "bg-red-50 text-red-700 border-red-200"
-                                : "bg-amber-50 text-amber-700 border-amber-200"
-                            }`}
-                          >
-                            {isFailed ? "Failed" : "Processing…"}
-                          </span>
-                        )}
-                      </div>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-        {/* Timeline preview — real data */}
+      {/* Document stats + recent documents — real backend data via the
+          existing fetchDocuments() helper; timeline preview passed through. */}
+      <DashboardDocuments
+        timelineCount={timelineEvents.length}
+        timelinePreview={
+          /* Timeline preview — real data */
         <div className="rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/10 to-cyan-500/10 p-5 shadow-lg backdrop-blur-xl lg:col-span-2">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">
@@ -453,8 +252,9 @@ export default async function DashboardPage() {
               })}
             </ol>
           )}
-        </div>
-      </section>
+          </div>
+        }
+      />
     </div>
   );
 }
