@@ -77,10 +77,9 @@ export default function DocumentCard({ doc, onDelete }: { doc: DemoDocument; onD
             aria-label={`Delete Permanently ${doc.name}`}
             title="Delete Permanently"
             onClick={() => onDelete(doc.id)}
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-2 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600"
+            className="inline-flex shrink-0 items-center rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
           >
             <Trash2 className="h-4 w-4" />
-            <span>Delete Permanently</span>
           </button>
         )}
       </div>
