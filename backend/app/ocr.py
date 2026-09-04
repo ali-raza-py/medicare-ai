@@ -40,6 +40,10 @@ if not hasattr(_np, 'float'):
 
 logger = logging.getLogger(__name__)
 
+_PADDLEOCR_ENABLED = os.getenv('MEDICARE_PADDLEOCR_ENABLED', 'true').lower() not in {
+    '0', 'false', 'no', 'off',
+}
+
 try:
     import pymupdf as fitz
     _PYMUPDF_AVAILABLE = True
@@ -51,6 +55,8 @@ except ImportError:
 _PADDLE_IMPORT_ERROR: str | None = None
 
 try:
+    if not _PADDLEOCR_ENABLED:
+        raise ImportError('PaddleOCR disabled by MEDICARE_PADDLEOCR_ENABLED')
     from paddleocr import PaddleOCR
     import paddleocr as _paddleocr_module
     _PADDLE_AVAILABLE = True
@@ -94,6 +100,7 @@ def ocr_status() -> dict:
     """Diagnostics for /api/health: which OCR backends are importable and,
     when PaddleOCR is not, why its import failed."""
     return {
+        'paddle_enabled': _PADDLEOCR_ENABLED,
         'paddle_available': _PADDLE_AVAILABLE,
         'paddleocr_version': _paddle_version or None,
         'paddle_import_error': _PADDLE_IMPORT_ERROR,
@@ -356,8 +363,8 @@ def _extract_pdf(source: bytes | str) -> OCRDocumentResult:
                     matrix = fitz.Matrix(2.0, 2.0)
                     rect = page.rect
                     max_dimension = max(rect.width * 2.0, rect.height * 2.0)
-                    if max_dimension > 2400:
-                        scale = 2400 / max_dimension
+                    if max_dimension > 1600:
+                        scale = 1600 / max_dimension
                         matrix = fitz.Matrix(2.0 * scale, 2.0 * scale)
                     pixmap = page.get_pixmap(matrix=matrix, alpha=False)
                     img_array = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
@@ -445,7 +452,7 @@ def _extract_image(source: bytes | str, filename: str) -> OCRDocumentResult:
             img = Image.open(io.BytesIO(source)) if isinstance(source, bytes) else Image.open(source)
             if img.mode != 'RGB':
                 img = img.convert('RGB')
-            img.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
+            img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
             img_array = np.array(img)
         except Exception as exc:
             logger.error('Failed to open image: %s', exc)

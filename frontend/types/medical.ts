@@ -63,8 +63,10 @@ export interface MedicalComparisonRow {
 }
 
 export interface MedicalComparisonRequest {
-  leftReport: string;
-  rightReport: string;
+  leftDocumentId?: string;
+  rightDocumentId?: string;
+  leftReport?: string;
+  rightReport?: string;
 }
 
 export interface MedicalComparisonResponse {

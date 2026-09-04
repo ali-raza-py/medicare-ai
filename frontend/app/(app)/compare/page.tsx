@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import {
   compareReports,
-  fetchDocumentDetail,
   fetchDocuments,
   type BackendDocumentListItem,
 } from "@/lib/api";
@@ -128,20 +127,9 @@ export default function ComparePage() {
     setCompareError(null);
     setResult(null);
     try {
-      // The backend compares the extracted text of both reports, so the
-      // selected documents' contents are fetched from the real records.
-      const [leftDoc, rightDoc] = await Promise.all([
-        fetchDocumentDetail(leftId),
-        fetchDocumentDetail(rightId),
-      ]);
-      if (!leftDoc || !rightDoc) {
-        throw new Error(
-          "Could not load the contents of the selected reports. Please try again."
-        );
-      }
       const comparison = await compareReports({
-        leftReport: leftDoc.text,
-        rightReport: rightDoc.text,
+        leftDocumentId: leftId,
+        rightDocumentId: rightId,
       });
       setResult(comparison);
     } catch (err: unknown) {

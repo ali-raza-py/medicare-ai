@@ -245,8 +245,8 @@ class TimelineResponse(BaseModel):
 
 
 class CompareRequest(BaseModel):
-    leftReport: str = Field(..., min_length=1)
-    rightReport: str = Field(..., min_length=1)
+    leftDocumentId: str = Field(..., min_length=1)
+    rightDocumentId: str = Field(..., min_length=1)
 
 
 class CompareRow(BaseModel):
@@ -725,8 +725,23 @@ async def medical_answer(
 
 
 @app.post('/api/compare-reports', response_model=CompareResponse)
-async def compare_reports_endpoint(payload: CompareRequest) -> dict[str, Any]:
-    return await asyncio.to_thread(compare_reports, payload.leftReport, payload.rightReport)
+async def compare_reports_endpoint(
+    payload: CompareRequest,
+    current_user: AuthUser = Depends(get_auth_user),
+) -> dict[str, Any]:
+    left_document = _resolve_document(payload.leftDocumentId, current_user)
+    right_document = _resolve_document(payload.rightDocumentId, current_user)
+    if left_document is None or right_document is None:
+        raise HTTPException(status_code=404, detail='One or both reports were not found.')
+    if left_document.status != 'processed' or right_document.status != 'processed':
+        raise HTTPException(status_code=422, detail='Both reports must finish processing before comparison.')
+    if not left_document.text.strip() or not right_document.text.strip():
+        raise HTTPException(status_code=422, detail='Both reports must contain extracted text before comparison.')
+    return await asyncio.to_thread(
+        compare_reports,
+        left_document.text,
+        right_document.text,
+    )
 
 
 @app.get('/api/timeline', response_model=TimelineResponse)

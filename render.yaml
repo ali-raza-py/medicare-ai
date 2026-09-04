@@ -26,6 +26,10 @@ services:
         value: "https://medicare-ai.vercel.app,https://medicare-ai-sigma.vercel.app,https://medicare-ai-ali-raza4.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
       - key: MEDICARE_UPLOAD_DIR
         value: /tmp/uploads
+      # Keep the free instance within its memory limit. Native PDF text still
+      # works; run scanned/image PaddleOCR locally or on a larger worker.
+      - key: MEDICARE_PADDLEOCR_ENABLED
+        value: "false"
       - key: MEDICARE_AI_PROVIDER
         value: groq
       - key: MEDICARE_AI_MODEL

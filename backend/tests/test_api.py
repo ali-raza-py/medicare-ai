@@ -129,12 +129,23 @@ def test_question_answer_missing() -> None:
 
 
 def test_compare_reports() -> None:
+    previous = client.post(
+        '/api/documents/upload',
+        files={'file': ('previous.pdf', b'%PDF-1.4\nBlood pressure 128/82, HbA1c 6.8%, Metformin\n%%EOF\n', 'application/pdf')},
+        headers=_auth_headers(),
+    )
+    current = client.post(
+        '/api/documents/upload',
+        files={'file': ('current.pdf', b'%PDF-1.4\nBlood pressure 122/78, HbA1c 6.4%, Metformin\n%%EOF\n', 'application/pdf')},
+        headers=_auth_headers(),
+    )
     response = client.post(
         '/api/compare-reports',
         json={
-            'leftReport': 'Blood pressure 128/82, HbA1c 6.8%, medication: Metformin',
-            'rightReport': 'Blood pressure 122/78, HbA1c 6.4%, medication: Metformin and lifestyle follow-up',
+            'leftDocumentId': previous.json()['document_id'],
+            'rightDocumentId': current.json()['document_id'],
         },
+        headers=_auth_headers(),
     )
     assert response.status_code == 200
     body = response.json()
