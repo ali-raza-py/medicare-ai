@@ -503,7 +503,13 @@ def delete_document(
         return {'document_id': document_id, 'deleted': True}
 
     row = supabase_service.get_document_record(document_id)
-    if not row or row.get('user_id') != current_user.sub:
+    if row is None:
+        # The local store can contain documents created while Supabase was
+        # unavailable or before the remote row was persisted. The local owner
+        # check above is sufficient for these local-only records.
+        store.delete(document_id)
+        return {'document_id': document_id, 'deleted': True}
+    if row.get('user_id') != current_user.sub:
         raise HTTPException(status_code=403, detail='Access denied.')
     storage_path = str(row.get('storage_path') or '')
     if storage_path and not supabase_service.delete_document_storage(

@@ -46,6 +46,9 @@ export async function signup(email: string, password: string): Promise<SignupRes
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
+    options: {
+      emailRedirectTo: `${window.location.origin}/auth/callback?next=/login`,
+    },
   });
 
   if (error) {

@@ -12,6 +12,7 @@ import {
   Loader2,
   LogOut,
   Mail,
+  Save,
   Settings,
   ShieldCheck,
   User,
@@ -31,6 +32,8 @@ type AccountInfo = {
   createdAt: string | null;
   emailConfirmed: boolean;
   metadataName: string | null;
+  age: string | null;
+  gender: string | null;
   expiresAt: string | null;
 };
 
@@ -64,6 +67,12 @@ export default function SettingsPage() {
 
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState("");
+  const [profileAge, setProfileAge] = useState("");
+  const [profileGender, setProfileGender] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileNotice, setProfileNotice] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
 
 
@@ -96,6 +105,10 @@ export default function SettingsPage() {
             : typeof metadata.name === "string" && metadata.name.trim()
               ? metadata.name.trim()
               : null;
+        const metadataAge = typeof metadata.age === "string" || typeof metadata.age === "number"
+          ? String(metadata.age)
+          : null;
+        const metadataGender = typeof metadata.gender === "string" ? metadata.gender : null;
 
         setAccount({
           email: authUser.email,
@@ -109,11 +122,16 @@ export default function SettingsPage() {
             authUser.email_confirmed_at ?? authUser.confirmed_at
           ),
           metadataName,
+          age: metadataAge,
+          gender: metadataGender,
           expiresAt:
             session?.expires_at != null
               ? new Date(session.expires_at * 1000).toISOString()
               : null,
         });
+        setProfileName(metadataName ?? "");
+        setProfileAge(metadataAge ?? "");
+        setProfileGender(metadataGender ?? "");
         setAccountStatus("ready");
       } catch (err: unknown) {
         if (cancelled) return;
@@ -142,6 +160,29 @@ export default function SettingsPage() {
         err instanceof Error ? err.message : "Sign out failed. Please try again."
       );
       setSigningOut(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setSavingProfile(true);
+    setProfileNotice(null);
+    setProfileError(null);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          full_name: profileName.trim() || null,
+          age: profileAge.trim() || null,
+          gender: profileGender || null,
+        },
+      });
+      if (error) throw error;
+      setProfileNotice("Profile details saved.");
+      setAccountReloadKey((key) => key + 1);
+    } catch (err: unknown) {
+      setProfileError(err instanceof Error ? err.message : "Could not save your profile.");
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -234,6 +275,59 @@ export default function SettingsPage() {
                   </p>
                 )}
               </div>
+            </div>
+            <div className="mt-6 grid gap-4 border-t border-white/20 pt-5 sm:grid-cols-3">
+              <div>
+                <label htmlFor="profile-name" className="text-xs font-medium text-slate-500">Full name</label>
+                <input
+                  id="profile-name"
+                  value={profileName}
+                  onChange={(event) => setProfileName(event.target.value)}
+                  placeholder="Your name"
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white/70 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                />
+              </div>
+              <div>
+                <label htmlFor="profile-age" className="text-xs font-medium text-slate-500">Age</label>
+                <input
+                  id="profile-age"
+                  type="number"
+                  min="0"
+                  max="120"
+                  value={profileAge}
+                  onChange={(event) => setProfileAge(event.target.value)}
+                  placeholder="Your age"
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white/70 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                />
+              </div>
+              <div>
+                <label htmlFor="profile-gender" className="text-xs font-medium text-slate-500">Gender</label>
+                <select
+                  id="profile-gender"
+                  value={profileGender}
+                  onChange={(event) => setProfileGender(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white/70 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                >
+                  <option value="">Prefer not to say</option>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                  <option value="non-binary">Non-binary</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSaveProfile}
+                disabled={savingProfile}
+                className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
+                {savingProfile ? "Saving…" : "Save profile"}
+              </button>
+              {profileNotice && <p className="text-sm text-emerald-700">{profileNotice}</p>}
+              {profileError && <p className="text-sm text-rose-700">{profileError}</p>}
             </div>
           </section>
 

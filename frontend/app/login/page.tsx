@@ -45,7 +45,6 @@ function LoginCard() {
   const callbackError = searchParams.get("error");
   useEffect(() => {
     if (callbackError) {
-      setErrors((previous) => ({ ...previous, form: callbackError }));
       router.replace("/login");
     }
   }, [callbackError, router]);
@@ -101,7 +100,11 @@ function LoginCard() {
     try {
       if (isSignup) {
         const result = await signup(email.trim(), password);
-        setNotice(`Account created for ${result.user.email}. Sign in below.`);
+        setNotice(
+          result.needsEmailConfirmation
+            ? `Account created for ${result.user.email}. Confirm your email, then sign in below.`
+            : `Account created for ${result.user.email}. Sign in below.`,
+        );
         setPassword("");
         setConfirmPassword("");
         setMode("signin");
@@ -110,11 +113,12 @@ function LoginCard() {
         router.replace(nextPath);
       }
     } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : "";
+      const message = /email.*(not confirmed|not verified)|confirm.*email/i.test(rawMessage)
+        ? "Your email is not verified yet. Open the confirmation link sent to your inbox, then return here and sign in."
+        : rawMessage || "Something went wrong. Please try again.";
       setErrors({
-        form:
-          error instanceof Error
-            ? error.message
-            : "Something went wrong. Please try again.",
+        form: message,
       });
     } finally {
       setLoading(false);
@@ -183,13 +187,13 @@ function LoginCard() {
           </div>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
-            {errors.form ? (
+            {(errors.form || callbackError) ? (
               <div
                 role="alert"
                 className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
               >
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                {errors.form}
+                {errors.form || callbackError}
               </div>
             ) : null}
 
