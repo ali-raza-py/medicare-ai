@@ -217,7 +217,9 @@ export default function DocumentsPage() {
             <AlertCircle className="h-6 w-6 shrink-0 text-red-600 mt-0.5" />
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-red-900">
-                Failed to load documents
+                {error.startsWith("Failed to delete")
+                  ? "Document action failed"
+                  : "Failed to load documents"}
               </h3>
               <p className="mt-1 text-sm text-red-700">
                 {error}

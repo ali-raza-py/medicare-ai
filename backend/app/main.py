@@ -128,9 +128,17 @@ def _hydrate_from_supabase(document_id: str, current_user: AuthUser) -> Document
 def _resolve_document(document_id: str, current_user: AuthUser) -> DocumentRecord | None:
     document = store.get(document_id)
     if document is not None:
-        if document.owner != current_user.email:
-            raise HTTPException(status_code=403, detail='Access denied.')
-        return document
+        if document.owner == current_user.email:
+            return document
+
+        # Local records persist the email that was present at upload time. If
+        # that email changed or was absent from the JWT, use the UUID-owned
+        # Supabase row as the authoritative ownership check.
+        if supabase_service.is_available() and _is_uuid(current_user.sub):
+            row = supabase_service.get_document_record(document_id)
+            if row and row.get('user_id') == current_user.sub:
+                return _hydrate_from_supabase(document_id, current_user)
+        raise HTTPException(status_code=403, detail='Access denied.')
     return _hydrate_from_supabase(document_id, current_user)
 
 

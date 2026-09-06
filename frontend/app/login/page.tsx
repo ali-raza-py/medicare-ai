@@ -101,16 +101,10 @@ function LoginCard() {
     try {
       if (isSignup) {
         const result = await signup(email.trim(), password);
-        if (result.needsEmailConfirmation) {
-          setNotice(
-            `Account created for ${result.user.email}. We sent you a confirmation link — open it, then sign in below.`
-          );
-          setPassword("");
-          setConfirmPassword("");
-          setMode("signin");
-        } else {
-          router.replace(nextPath);
-        }
+        setNotice(`Account created for ${result.user.email}. Sign in below.`);
+        setPassword("");
+        setConfirmPassword("");
+        setMode("signin");
       } else {
         await login(email.trim(), password);
         router.replace(nextPath);
@@ -177,8 +171,7 @@ function LoginCard() {
           <div className="mt-4 rounded-lg border border-teal-100 bg-teal-50/60 px-4 py-3 text-xs leading-relaxed text-teal-800">
             {isSignup ? (
               <p>
-                Create your account with an email and password. You'll confirm
-                your email address before signing in.
+                Create your account with an email and password, then sign in.
               </p>
             ) : (
               <p>
