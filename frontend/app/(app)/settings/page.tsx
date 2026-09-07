@@ -32,7 +32,6 @@ type AccountInfo = {
   createdAt: string | null;
   emailConfirmed: boolean;
   metadataName: string | null;
-  hospitalName: string | null;
   age: string | null;
   gender: string | null;
   expiresAt: string | null;
@@ -69,7 +68,6 @@ export default function SettingsPage() {
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [profileName, setProfileName] = useState("");
-  const [hospitalName, setHospitalName] = useState("");
   const [profileAge, setProfileAge] = useState("");
   const [profileGender, setProfileGender] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
@@ -107,9 +105,6 @@ export default function SettingsPage() {
             : typeof metadata.name === "string" && metadata.name.trim()
               ? metadata.name.trim()
               : null;
-        const metadataHospitalName = typeof metadata.hospital_name === "string" && metadata.hospital_name.trim()
-          ? metadata.hospital_name.trim()
-          : null;
         const metadataAge = typeof metadata.age === "string" || typeof metadata.age === "number"
           ? String(metadata.age)
           : null;
@@ -127,7 +122,6 @@ export default function SettingsPage() {
             authUser.email_confirmed_at ?? authUser.confirmed_at
           ),
           metadataName,
-          hospitalName: metadataHospitalName,
           age: metadataAge,
           gender: metadataGender,
           expiresAt:
@@ -136,7 +130,6 @@ export default function SettingsPage() {
               : null,
         });
         setProfileName(metadataName ?? "");
-        setHospitalName(metadataHospitalName ?? "");
         setProfileAge(metadataAge ?? "");
         setProfileGender(metadataGender ?? "");
         setAccountStatus("ready");
@@ -179,7 +172,6 @@ export default function SettingsPage() {
       const { error } = await supabase.auth.updateUser({
         data: {
           full_name: profileName.trim() || null,
-          ...(user?.role === "hospital" ? { hospital_name: hospitalName.trim() || null } : {}),
           age: profileAge.trim() || null,
           gender: profileGender || null,
         },
@@ -285,18 +277,6 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="mt-6 grid gap-4 border-t border-white/20 pt-5 sm:grid-cols-3">
-              {user.role === "hospital" && (
-                <div>
-                  <label htmlFor="hospital-profile-name" className="text-xs font-medium text-slate-500">Hospital name</label>
-                  <input
-                    id="hospital-profile-name"
-                    value={hospitalName}
-                    onChange={(event) => setHospitalName(event.target.value)}
-                    placeholder="Your hospital name"
-                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white/70 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
-                  />
-                </div>
-              )}
               <div>
                 <label htmlFor="profile-name" className="text-xs font-medium text-slate-500">Full name</label>
                 <input

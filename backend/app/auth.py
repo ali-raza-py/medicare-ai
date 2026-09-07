@@ -27,6 +27,20 @@ class AuthUser(BaseModel):
     role: str | None = None
 
 
+def _role_from_claims(payload: dict) -> str | None:
+    """Read the application role from the claim locations used by Supabase."""
+    direct_role = payload.get('role')
+    if isinstance(direct_role, str):
+        return direct_role.lower()
+    for claim_name in ('user_metadata', 'app_metadata'):
+        metadata = payload.get(claim_name)
+        if isinstance(metadata, dict):
+            role = metadata.get('role')
+            if isinstance(role, str):
+                return role.lower()
+    return None
+
+
 def ensure_jwt_configured(environment: str, jwt_secret: str | None) -> None:
     """Refuse to run in a non-development environment without a JWT signing
     secret. Signature verification is mandatory: starting without a secret
@@ -87,7 +101,7 @@ def _verify_via_jwks(token: str) -> AuthUser | None:
         return None
     email = payload.get('email')
     aud = payload.get('aud')
-    role = payload.get('role')
+    role = _role_from_claims(payload)
     return AuthUser(
         sub=str(payload['sub']),
         email=email if isinstance(email, str) else None,
@@ -178,7 +192,14 @@ def get_auth_user(
         if payload is not None:
             email = payload.get('email')
             aud = payload.get('aud')
-            role = payload.get('role')
+            role = _role_from_claims(payload)
+            if role is None:
+                # Supabase user_metadata is not present in every JWT format.
+                # The token is already signature-verified above; enrich the
+                # identity from Supabase so role checks remain authoritative.
+                remote_user = _verify_via_supabase(token)
+                if remote_user is not None and remote_user.sub == str(payload['sub']):
+                    return remote_user
             return AuthUser(
                 sub=str(payload['sub']),
                 email=email if isinstance(email, str) else None,

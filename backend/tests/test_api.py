@@ -8,19 +8,29 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from backend.app.main import app, store
+from backend.app import auth as auth_module
 
 JWT_SECRET = os.environ.get("MEDICARE_JWT_SECRET", "test-jwt-secret-for-pytest-only-32bytes!")
 
 client = TestClient(app)
 
 
-def _make_token(email: str = "test@example.com", role: str = "patient") -> str:
+def _make_token(email: str = "test@example.com", role: str | None = "patient", nested_role: bool = False) -> str:
     """Create a test JWT that the backend's auth dependency will accept."""
-    return jwt.encode({"sub": email, "email": email, "aud": "test", "role": role}, JWT_SECRET, algorithm="HS256")
+    payload = {"sub": email, "email": email, "aud": "test"}
+    if nested_role:
+        payload["user_metadata"] = {"role": role}
+    elif role is not None:
+        payload["role"] = role
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
 def _auth_headers(email: str = "test@example.com", role: str = "patient") -> dict[str, str]:
     return {"Authorization": f"Bearer {_make_token(email, role=role)}"}
+
+
+def _nested_role_headers(email: str, role: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {_make_token(email, role=role, nested_role=True)}"}
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +45,31 @@ def test_health_endpoint():
     response = client.get('/api/health')
     assert response.status_code == 200
     assert response.json()['status'] == 'ok'
+
+
+def test_hospital_role_from_supabase_user_metadata_can_access_portal() -> None:
+    response = client.get(
+        '/api/hospital/patients',
+        headers=_nested_role_headers('hospital@example.com', 'hospital'),
+    )
+    assert response.status_code == 200
+
+
+def test_roleless_verified_token_uses_supabase_hospital_metadata(monkeypatch) -> None:
+    monkeypatch.setattr(
+        auth_module,
+        '_verify_via_supabase',
+        lambda token: auth_module.AuthUser(
+            sub='hospital@example.com',
+            email='hospital@example.com',
+            role='hospital',
+        ),
+    )
+    response = client.get(
+        '/api/hospital/patients',
+        headers={'Authorization': f'Bearer {_make_token("hospital@example.com", role=None)}'},
+    )
+    assert response.status_code == 200
 
 
 def test_upload_and_process_document(tmp_path):

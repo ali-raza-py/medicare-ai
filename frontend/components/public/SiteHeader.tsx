@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, ChevronDown, HeartPulse } from "lucide-react";
+import { ArrowUpRight, HeartPulse } from "lucide-react";
 import { SITE_NAME } from "@/lib/site";
 
 /**
@@ -45,25 +45,6 @@ export default function SiteHeader() {
           >
             Contact
           </Link>
-          <details className="relative group">
-            <summary className="flex cursor-pointer list-none items-center gap-1 transition-colors hover:text-[#0b9b8e]">
-              Portals <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="absolute right-0 top-full z-50 mt-3 w-56 rounded-2xl border border-[#dfebe6] bg-white p-2 text-sm font-semibold shadow-[0_14px_32px_rgba(28,61,56,0.14)]">
-              <Link
-                href="/login?next=%2Fdashboard"
-                className="block rounded-xl px-3 py-2.5 text-[#40516a] transition-colors hover:bg-[#f1faf7] hover:text-[#0b9b8e]"
-              >
-                Individual / Patient
-              </Link>
-              <Link
-                href="/login?next=%2Fhospital"
-                className="block rounded-xl px-3 py-2.5 text-[#40516a] transition-colors hover:bg-[#f1faf7] hover:text-[#0b9b8e]"
-              >
-                Hospital
-              </Link>
-            </div>
-          </details>
         </div>
 
         <div className="flex items-center gap-3 text-sm font-bold">

@@ -17,7 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import Logo from "@/components/Logo";
-import { login, signup, type UserRole } from "@/lib/auth";
+import { login, signup } from "@/lib/auth";
 import { useSession } from "@/lib/session";
 
 type Mode = "signin" | "signup";
@@ -25,7 +25,6 @@ type FieldErrors = {
   email?: string;
   password?: string;
   confirmPassword?: string;
-  hospitalName?: string;
   form?: string;
 };
 
@@ -50,8 +49,6 @@ function LoginCard() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [hospitalName, setHospitalName] = useState("");
-  const [accountType, setAccountType] = useState<UserRole>("patient");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -115,9 +112,6 @@ function LoginCard() {
     if (isSignup && confirmPassword !== password) {
       next.confirmPassword = "Passwords do not match.";
     }
-    if (isSignup && accountType === "hospital" && !hospitalName.trim()) {
-      next.hospitalName = "Hospital name is required.";
-    }
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -132,7 +126,7 @@ function LoginCard() {
     setLoading(true);
     try {
       if (isSignup) {
-        const result = await signup(email.trim(), password, accountType, hospitalName);
+        const result = await signup(email.trim(), password, "patient");
         setNotice(
           result.needsEmailConfirmation
             ? `Account created for ${result.user.email}. Confirm your email, then sign in below.`
@@ -142,17 +136,13 @@ function LoginCard() {
         setConfirmPassword("");
         setMode("signin");
       } else {
-        const signedInUser = await login(email.trim(), password);
+        await login(email.trim(), password);
         if (rememberMe) {
           window.localStorage.setItem("medcare.remember-email", email.trim());
         } else {
           window.localStorage.removeItem("medcare.remember-email");
         }
-        router.replace(
-          nextPath === "/dashboard" && signedInUser.role === "hospital"
-            ? "/hospital"
-            : nextPath,
-        );
+        router.replace(nextPath);
       }
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : "";
@@ -272,30 +262,6 @@ function LoginCard() {
               </button>
             </div>
 
-            {isSignup ? (
-              <div className="mt-6">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Account type</p>
-                <div className="mt-2 grid grid-cols-2 rounded-full border border-[#d7e5df] bg-[#f4f8f6] p-1" role="radiogroup" aria-label="Account type">
-                  {(["patient", "hospital"] as const).map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      role="radio"
-                      aria-checked={accountType === type}
-                      onClick={() => setAccountType(type)}
-                      className={`rounded-full px-4 py-2 text-xs font-bold transition-colors ${
-                        accountType === type
-                          ? "bg-[#123f3a] text-white shadow-sm"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      {type === "patient" ? "Individual / Patient" : "Hospital"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
             <form onSubmit={handleSubmit} className="mt-9 space-y-5" noValidate>
               {(errors.form || callbackError) ? (
                 <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -308,23 +274,6 @@ function LoginCard() {
                 <div role="status" className="flex items-start gap-2 rounded-xl border border-[#bce5d7] bg-[#effaf5] px-4 py-3 text-sm text-[#176b5d]">
                   <MailCheck className="mt-0.5 h-4 w-4 shrink-0" />
                   {notice}
-                </div>
-              ) : null}
-
-              {isSignup && accountType === "hospital" ? (
-                <div>
-                  <label htmlFor="hospital-name" className="block text-xs font-bold uppercase tracking-wider text-slate-600">Hospital name</label>
-                  <input
-                    id="hospital-name"
-                    type="text"
-                    autoComplete="organization"
-                    placeholder="e.g. City Medical Center"
-                    value={hospitalName}
-                    onChange={(event) => setHospitalName(event.target.value)}
-                    aria-invalid={Boolean(errors.hospitalName)}
-                    className="mt-2 w-full rounded-xl border border-[#dce9e4] bg-[#f7faf9] px-4 py-3.5 text-sm text-[#102a2a] outline-none transition focus:border-[#168374] focus:bg-white focus:ring-4 focus:ring-[#cceee4]"
-                  />
-                  {errors.hospitalName ? <p className="mt-1.5 text-xs text-red-600">{errors.hospitalName}</p> : null}
                 </div>
               ) : null}
 

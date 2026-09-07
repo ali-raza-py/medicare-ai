@@ -25,7 +25,7 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  const protectedPrefixes = ['/dashboard', '/documents', '/upload', '/timeline', '/ask', '/compare', '/settings', '/hospital', '/permissions'];
+  const protectedPrefixes = ['/dashboard', '/documents', '/upload', '/timeline', '/ask', '/compare', '/settings'];
   const isProtectedRoute = protectedPrefixes.some((prefix) => request.nextUrl.pathname.startsWith(prefix));
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/forgot-password');
