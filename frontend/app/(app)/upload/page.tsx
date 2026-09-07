@@ -10,14 +10,9 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import {
-  addUploadedDocument,
-  clearUploadedDocuments,
-  getUploadedDocuments,
-  removeUploadedDocument,
-} from "@/lib/uploaded-documents";
 import { createClient } from "@/lib/supabase/client";
 import { apiUrl, isApiBaseConfigured } from "@/lib/api-base";
+import { deleteDocument } from "@/lib/api";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
@@ -94,20 +89,6 @@ export default function UploadPage() {
   useEffect(() => {
     entriesRef.current = entries;
   }, [entries]);
-
-  // Restore previously uploaded files (demo-mode persistence) on mount.
-  useEffect(() => {
-    const restored = getUploadedDocuments().map((d) => ({
-      id: d.id,
-      name: d.name,
-      size: d.size,
-      type: d.type,
-      progress: 100,
-      status: "success" as UploadStatus,
-      uploadedAt: d.uploadedAt,
-    }));
-    setEntries(restored);
-  }, []);
 
   const announce = (msg: string) => {
     setAnnouncements((s) => [...s.slice(-4), msg]);
@@ -207,6 +188,7 @@ export default function UploadPage() {
     // OCR runs synchronously on Railway during this request; 60s is too short for PaddleOCR.
     xhr.timeout = 300_000;
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    controller.signal.addEventListener('abort', () => xhr.abort(), { once: true });
 
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable) {
@@ -253,14 +235,8 @@ export default function UploadPage() {
                   : e
               )
             );
-            addUploadedDocument({
-              id: documentId,
-              name: entry.name,
-              size: entry.size,
-              type: entry.type,
-              uploadedAt,
-            });
             announce(`Uploaded and processed ${entry.name}`);
+            window.dispatchEvent(new Event('medcare-uploads-changed'));
             delete abortControllersRef.current[id];
             return;
           }
@@ -302,14 +278,8 @@ export default function UploadPage() {
             )
           );
 
-          addUploadedDocument({
-            id: documentId,
-            name: entry.name,
-            size: entry.size,
-            type: entry.type,
-            uploadedAt,
-          });
           announce(`Uploaded and processed ${entry.name}`);
+          window.dispatchEvent(new Event('medcare-uploads-changed'));
         } catch (err) {
           if (controller.signal.aborted) return;
           const errorMsg = err instanceof Error ? err.message : 'Processing error';
@@ -392,22 +362,28 @@ export default function UploadPage() {
     setTimeout(() => startUpload(id), 200);
   };
 
-  const removeEntry = (id: string) => {
+  const removeEntry = async (id: string) => {
     const entry = entriesRef.current.find((e) => e.id === id);
-    const stableId = entry?.documentId ?? id;
 
     if (abortControllersRef.current[id]) {
       abortControllersRef.current[id].abort();
       delete abortControllersRef.current[id];
     }
-    removeUploadedDocument(stableId);
+    if (entry?.documentId) {
+      try {
+        await deleteDocument(entry.documentId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Document deletion failed.";
+        announce(message);
+        return;
+      }
+    }
     setEntries((prev) => prev.filter((e) => e.id !== id));
   };
 
   const clearAll = () => {
     Object.values(abortControllersRef.current).forEach((c) => c.abort());
     abortControllersRef.current = {};
-    clearUploadedDocuments();
     setEntries([]);
     announce("Cleared all files");
   };
@@ -415,7 +391,7 @@ export default function UploadPage() {
   const successCount = entries.filter((e) => e.status === "success").length;
 
   return (
-    <div className="p-6">
+    <div className="animate-page-enter p-6">
       <div className="mx-auto max-w-4xl">
         <header className="mb-6">
           <h1 className="text-2xl font-semibold text-slate-900">Upload documents</h1>
@@ -432,7 +408,7 @@ export default function UploadPage() {
           onDragLeave={() => setDragActive(false)}
           onDrop={handleDrop}
           aria-describedby="upload-instructions"
-          className="relative rounded-2xl border border-slate-200 bg-white/40 p-6 backdrop-blur-md shadow-sm"
+          className="interactive-lift relative rounded-2xl border border-slate-200 bg-white/40 p-6 backdrop-blur-md shadow-sm"
         >
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <div className="flex h-40 w-full flex-1 flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-slate-200 px-4 py-6 transition-colors duration-150 sm:h-44 sm:px-10"

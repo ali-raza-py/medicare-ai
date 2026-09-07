@@ -18,6 +18,7 @@ class DocumentRecord:
     processed: bool = False
     created_at: str = ""
     owner: str | None = None
+    owner_id: str | None = None
     # Honest processing state: 'uploaded' | 'processing' | 'processed' | 'failed'
     status: str = "uploaded"
     error_message: str | None = None
@@ -52,6 +53,7 @@ class InMemoryDocumentStore:
                     processed=bool(data.get("processed", False)),
                     created_at=str(data.get("created_at") or ""),
                     owner=data.get("owner"),
+                    owner_id=data.get("owner_id"),
                     status=str(data.get("status") or ("processed" if data.get("processed") else "uploaded")),
                     error_message=data.get("error_message"),
                 )
@@ -82,6 +84,7 @@ class InMemoryDocumentStore:
                     # endpoints keep filtering by the authenticated user's
                     # email after a backend restart.
                     owner=data.get("owner"),
+                    owner_id=data.get("owner_id"),
                     status=str(data.get('status') or ('processed' if data.get('processed') else 'uploaded')),
                     error_message=data.get('error_message'),
                 )
@@ -105,6 +108,7 @@ class InMemoryDocumentStore:
             'processed': document.processed,
             'created_at': document.created_at,
             'owner': document.owner,
+            'owner_id': document.owner_id,
             'status': document.status,
             'error_message': document.error_message,
         }, ensure_ascii=False), encoding='utf-8')

@@ -76,6 +76,17 @@ export default function Sidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [mobileOpen, onClose]);
+
   return (
     <>
       {/* Desktop sidebar */}
@@ -87,6 +98,9 @@ export default function Sidebar({
       <div
         className={`fixed inset-0 z-50 lg:hidden ${mobileOpen ? "" : "pointer-events-none"}`}
         aria-hidden={!mobileOpen}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Mobile navigation"
       >
         <div
           onClick={onClose}
@@ -103,7 +117,7 @@ export default function Sidebar({
             type="button"
             onClick={onClose}
             aria-label="Close navigation"
-            className="absolute right-3 top-4 rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            className="interactive-lift absolute right-3 top-4 rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
           >
             <X className="h-5 w-5" />
           </button>

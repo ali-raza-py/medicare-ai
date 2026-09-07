@@ -8,46 +8,21 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   CalendarDays,
-  FileText,
   Loader2,
   Sparkles,
 } from "lucide-react";
-import {
-  DEMO_DOCUMENTS,
-  DEMO_DOCUMENT_DETAILS,
-  type DemoDocumentDetail,
-} from "@/lib/demo-data";
-import {
-  getUploadedDocuments,
-  uploadedToDemoDocument,
-  type UploadedDocument,
-} from "@/lib/uploaded-documents";
-import {
-  FLAG_LABELS,
-  FLAG_STYLES,
-  KIND_ICONS,
-  KIND_LABELS,
-} from "@/lib/document-constants";
+import { KIND_ICONS, KIND_LABELS } from "@/lib/document-constants";
 import { fetchDocumentDetail, type BackendDocumentDetail } from "@/lib/api";
 
 export default function DocumentDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
-
-  const demoDoc = DEMO_DOCUMENTS.find((d) => d.id === id);
-  const uploaded: UploadedDocument | undefined = demoDoc
-    ? undefined
-    : getUploadedDocuments().find((d) => d.id === id);
-
-  // The backend record is the source of truth: ALWAYS fetch it for non-demo
-  // documents, even when localStorage metadata exists. localStorage only
-  // knows name/size/type — never the extracted text or processing status.
   const [backendDoc, setBackendDoc] = useState<BackendDocumentDetail | null>(null);
-  const [loading, setLoading] = useState(!demoDoc && !!id);
+  const [loading, setLoading] = useState(!!id);
   const [error, setError] = useState<string | null>(null);
 
   const fetchDoc = useCallback(() => {
-    if (demoDoc || !id) {
+    if (!id) {
       setLoading(false);
       return;
     }
@@ -68,10 +43,13 @@ export default function DocumentDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [demoDoc, id]);
+  }, [id]);
 
   useEffect(() => {
-    fetchDoc();
+    const timer = window.setTimeout(() => {
+      fetchDoc();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetchDoc]);
 
   // Ignore a backend record that belongs to a previously-viewed document so
@@ -87,7 +65,7 @@ export default function DocumentDetailPage() {
     );
   }
 
-  if (error && !demoDoc && !uploaded) {
+  if (error) {
     return (
       <div className="mx-auto w-full max-w-6xl">
         <div className="rounded-2xl border border-red-200 bg-red-50 backdrop-blur-xl p-8 shadow-lg">
@@ -124,7 +102,7 @@ export default function DocumentDetailPage() {
     );
   }
 
-  if (!demoDoc && !uploaded && !visibleBackendDoc) {
+  if (!visibleBackendDoc) {
     return (
       <div className="mx-auto w-full max-w-6xl">
         <div className="rounded-2xl border border-white/20 bg-white/40 backdrop-blur-xl p-12 text-center shadow-lg">
@@ -146,54 +124,21 @@ export default function DocumentDetailPage() {
     );
   }
 
-  const doc = demoDoc
-    ?? (visibleBackendDoc
-      ? {
-          id: visibleBackendDoc.id,
-          name: visibleBackendDoc.title || visibleBackendDoc.filename,
-          kind: 'report' as const,
-          date: visibleBackendDoc.created_at
-            ? new Date(visibleBackendDoc.created_at).toLocaleDateString('en-US', {
-                month: 'short', day: '2-digit', year: 'numeric',
-              })
-            : 'Recent',
-          pages: visibleBackendDoc.page_count ?? 1,
-          status: visibleBackendDoc.status as 'processed' | 'processing' | 'failed',
-          flag: 'normal' as const,
-        }
-      : uploaded
-        ? uploadedToDemoDocument(uploaded)
-        : {
-            // Not a demo document and no local entry; the "not found" branch
-            // above already returned, so this fallback never renders.
-            id: id ?? '',
-            name: 'Unavailable document',
-            kind: 'report' as const,
-            date: 'Recent',
-            pages: 1,
-            status: 'processing' as const,
-            flag: 'normal' as const,
-          });
+  const doc = {
+    id: visibleBackendDoc.id,
+    name: visibleBackendDoc.title || visibleBackendDoc.filename,
+    kind: 'report' as const,
+    date: visibleBackendDoc.created_at
+      ? new Date(visibleBackendDoc.created_at).toLocaleDateString('en-US', {
+          month: 'short', day: '2-digit', year: 'numeric',
+        })
+      : 'Recent',
+    pages: visibleBackendDoc.page_count ?? 0,
+    status: visibleBackendDoc.status as 'processed' | 'processing' | 'failed',
+    flag: 'normal' as const,
+  };
 
-  // Real extracted text from the backend when it has the document;
-  // localStorage-only entries (uploaded before backend integration) keep the
-  // honest notice — no invented content.
-  const detail: DemoDocumentDetail | undefined = demoDoc
-    ? DEMO_DOCUMENT_DETAILS[doc.id]
-    : visibleBackendDoc
-      ? {
-          summary: visibleBackendDoc.text || 'No extracted text available.',
-          extractedAt: visibleBackendDoc.created_at
-            ? new Date(visibleBackendDoc.created_at).toLocaleString()
-            : 'just now',
-        }
-      : {
-          summary:
-            "Demo upload — AI extraction will run automatically once the backend integration is connected.",
-          extractedAt: uploaded
-            ? new Date(uploaded.uploadedAt).toLocaleString()
-            : "just now",
-        };
+  const extractedText = visibleBackendDoc.text || '';
 
   const KindIcon = KIND_ICONS[doc.kind];
 
@@ -234,7 +179,9 @@ export default function DocumentDetailPage() {
               </span>
               <span className="text-slate-400">·</span>
               <span>
-                {doc.pages} page{doc.pages > 1 ? "s" : ""}
+                {doc.pages > 0
+                  ? `${doc.pages} page${doc.pages > 1 ? "s" : ""}`
+                  : "Page count unavailable"}
               </span>
             </div>
           </div>
@@ -242,11 +189,6 @@ export default function DocumentDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-white/40 px-2.5 py-1 text-xs font-medium text-slate-700 backdrop-blur-sm border border-white/20">
               {KIND_LABELS[doc.kind]}
-            </span>
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm border border-white/20 ${FLAG_STYLES[doc.flag]}`}
-            >
-              {FLAG_LABELS[doc.flag]}
             </span>
           </div>
         </div>
@@ -259,10 +201,9 @@ export default function DocumentDetailPage() {
             AI-extracted findings
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            {visibleBackendDoc
-              ? "Real OCR extraction"
-              : "Synthetic demo extraction"}{" "}
-            · {detail?.extractedAt ?? "not yet processed"}
+            Real OCR extraction · {visibleBackendDoc.created_at
+              ? new Date(visibleBackendDoc.created_at).toLocaleString()
+              : "not yet processed"}
           </p>
 
           {visibleBackendDoc?.status === 'failed' && (
@@ -290,63 +231,17 @@ export default function DocumentDetailPage() {
             </div>
           )}
 
-          {detail?.summary && (
+          {extractedText && (
             <pre
               className="mt-4 max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-white/20 bg-white/60 p-4 font-sans text-sm leading-relaxed text-slate-700"
             >
-              {detail.summary}
+              {extractedText}
             </pre>
           )}
 
-          {detail?.values && detail.values.length > 0 ? (
-            <div className="mt-5 overflow-hidden rounded-xl border border-white/20">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-white/40 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-2.5 font-semibold">Test</th>
-                    <th className="px-4 py-2.5 font-semibold">Result</th>
-                    <th className="hidden px-4 py-2.5 font-semibold sm:table-cell">
-                      Reference range
-                    </th>
-                    <th className="px-4 py-2.5 font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {detail.values.map((v) => (
-                    <tr key={v.label} className="hover:bg-white/20 transition-colors">
-                      <td className="px-4 py-3 font-medium text-slate-900">{v.label}</td>
-                      <td className="px-4 py-3 text-slate-700">{v.value}</td>
-                      <td className="hidden px-4 py-3 text-slate-500 sm:table-cell">
-                        {v.referenceRange}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium border border-white/20 ${FLAG_STYLES[v.flag]}`}
-                        >
-                          {FLAG_LABELS[v.flag]}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-
-          {detail?.impression && (
-            <div className="mt-5 rounded-xl border border-white/20 bg-gradient-to-r from-teal-500/5 to-cyan-500/5 p-4">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-teal-700">
-                Impression
-              </h4>
-              <p className="mt-2 text-sm leading-relaxed text-slate-700">
-                {detail.impression}
-              </p>
-            </div>
-          )}
-
           <p className="mt-5 text-xs leading-relaxed text-slate-500">
-            Demo data only — not medical advice. Always consult a qualified
-            clinician about your results.
+            Extracted text is shown for reference and is not medical advice.
+            Always consult a qualified clinician about your results.
           </p>
         </section>
 
@@ -369,7 +264,9 @@ export default function DocumentDetailPage() {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <dt className="text-slate-600">Pages</dt>
-                <dd className="font-medium text-slate-900">{doc.pages}</dd>
+                <dd className="font-medium text-slate-900">
+                  {doc.pages > 0 ? doc.pages : "Unavailable"}
+                </dd>
               </div>
             </dl>
           </section>

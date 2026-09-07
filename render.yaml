@@ -19,17 +19,15 @@ services:
         value: "3.12"
       - key: MEDICARE_ENV
         value: production
-      # Allow the Vercel production alias, the auto-generated Vercel production
-      # domains, and local development. Preview deployments must be added here
-      # manually because FastAPI CORSMiddleware does not support wildcards.
+      # Allow only deployed frontend origins. Add preview domains explicitly when
+      # they are needed; production must never accept localhost origins.
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://medicare-ai.vercel.app,https://medicare-ai-sigma.vercel.app,https://medicare-ai-ali-raza4.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
+        value: "https://medicare-ai.vercel.app,https://medicare-ai-sigma.vercel.app,https://medicare-ai-ali-raza4.vercel.app"
       - key: MEDICARE_UPLOAD_DIR
         value: /tmp/uploads
-      # Keep the free instance within its memory limit. Native PDF text still
-      # works; run scanned/image PaddleOCR locally or on a larger worker.
+      # Image and scanned-PDF uploads require the real PaddleOCR backend.
       - key: MEDICARE_PADDLEOCR_ENABLED
-        value: "false"
+        value: "true"
       - key: MEDICARE_AI_PROVIDER
         value: groq
       - key: MEDICARE_AI_MODEL
@@ -37,4 +35,10 @@ services:
       - key: NEXT_PUBLIC_SUPABASE_URL
         value: https://fftwxbmoacdxcquowqzv.supabase.co
       - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-        value: sb_publishable_vKrzdw4n94QPVKwAtfDwOQ_w7oG_LPY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MEDICARE_JWT_SECRET
+        sync: false
+      - key: MEDICARE_AI_API_KEY
+        sync: false

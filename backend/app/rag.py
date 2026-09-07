@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from difflib import SequenceMatcher
 from typing import Any
 
 from backend.app.providers import build_provider
@@ -266,54 +267,52 @@ def _ai_unavailable_response(
 
 
 def compare_reports(left_report: str, right_report: str) -> dict[str, Any]:
-    left_tokens = normalize_text(left_report).split()
-    right_tokens = normalize_text(right_report).split()
+    left_lines = [line.strip() for line in left_report.splitlines() if line.strip()]
+    right_lines = [line.strip() for line in right_report.splitlines() if line.strip()]
+    matcher = SequenceMatcher(a=left_lines, b=right_lines, autojunk=False)
+    changes: list[dict[str, str]] = []
+    additions: list[str] = []
+    removals: list[str] = []
 
-    left_set = set(left_tokens)
-    right_set = set(right_tokens)
-    additions = sorted(right_set - left_set)
-    removals = sorted(left_set - right_set)
-
-    changes = []
-    if 'blood pressure' in left_report.lower() and 'blood pressure' in right_report.lower():
+    for tag, left_start, left_end, right_start, right_end in matcher.get_opcodes():
+        if tag == 'equal':
+            continue
+        previous = ' '.join(left_lines[left_start:left_end])
+        current = ' '.join(right_lines[right_start:right_end])
+        removals.extend(left_lines[left_start:left_end])
+        additions.extend(right_lines[right_start:right_end])
+        change_type = 'updated' if previous and current else ('removed' if previous else 'added')
+        source_text = f'{previous} {current}'.lower()
+        field = next(
+            (
+                label
+                for label in ('Blood pressure', 'HbA1c', 'Metformin')
+                if label.lower() in source_text
+            ),
+            f'Text difference {len(changes) + 1}',
+        )
         changes.append({
-            'field': 'Blood pressure',
-            'previousValue': '128/82',
-            'currentValue': '122/78',
-            'changeType': 'updated',
-            'detail': 'Blood pressure improved according to the newer record.',
-        })
-    if 'hba1c' in left_report.lower() and 'hba1c' in right_report.lower():
-        changes.append({
-            'field': 'HbA1c',
-            'previousValue': '6.8%',
-            'currentValue': '6.4%',
-            'changeType': 'updated',
-            'detail': 'HbA1c decreased in the newer report.',
-        })
-    if 'metformin' in left_report.lower() or 'metformin' in right_report.lower():
-        changes.append({
-            'field': 'Medication notes',
-            'previousValue': 'Metformin',
-            'currentValue': 'Metformin and lifestyle follow-up',
-            'changeType': 'updated',
-            'detail': 'Medication plan was updated with follow-up guidance.',
+            'field': field,
+            'previousValue': previous or 'Not present in earlier report',
+            'currentValue': current or 'Not present in current report',
+            'changeType': change_type,
+            'detail': 'Text differs between the two uploaded reports. Review the source reports with a clinician for interpretation.',
         })
 
     if not changes:
         changes.append({
-            'field': 'General note',
-            'previousValue': 'Earlier report',
-            'currentValue': 'Current report',
-            'changeType': 'updated',
-            'detail': 'The report content changed across the two documents.',
+            'field': 'Document text',
+            'previousValue': 'No textual difference detected',
+            'currentValue': 'No textual difference detected',
+            'changeType': 'unchanged',
+            'detail': 'No textual difference was detected in the extracted report text.',
         })
 
     return {
-        'summary': 'Comparison completed using the provided report text. This summary highlights textual differences only and does not diagnose or prescribe treatment.',
+        'summary': 'Comparison completed using extracted text from both uploaded reports. Differences are shown verbatim where possible; this does not diagnose or prescribe treatment.',
         'changes': changes,
-        'provider': 'local-mock-provider',
-        'model': 'synthetic-compare-v1',
+        'provider': 'local-text-comparison',
+        'model': 'line-diff-v1',
         'additions': additions[:10],
         'removals': removals[:10],
     }

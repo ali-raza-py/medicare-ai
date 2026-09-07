@@ -54,3 +54,23 @@ class Settings:
 
 
 settings = Settings()
+
+
+def validate_runtime_config() -> None:
+    """Fail fast when production would silently lose data or auth safety."""
+    if settings.environment.lower() in {'development', 'test'}:
+        return
+
+    missing = []
+    if not settings.supabase_url:
+        missing.append('NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL')
+    if not settings.supabase_anon_key:
+        missing.append('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or SUPABASE_ANON_KEY')
+    if not settings.supabase_service_key:
+        missing.append('SUPABASE_SERVICE_ROLE_KEY')
+    if not settings.allowed_origins or any('localhost' in origin or '127.0.0.1' in origin for origin in settings.allowed_origins):
+        missing.append('CORS_ALLOWED_ORIGINS with production frontend origins')
+    if missing:
+        raise RuntimeError(
+            'Production configuration is incomplete. Set: ' + ', '.join(missing) + '.'
+        )

@@ -103,7 +103,7 @@ def get_user_id_from_token(user_token: str | None) -> str | None:
 
 
 # Optional columns managed by the migration; written only when present.
-_OPTIONAL_COLUMNS = ('error_message', 'page_count', 'ocr_metadata')
+_OPTIONAL_COLUMNS = ('title', 'error_message', 'page_count', 'ocr_metadata')
 
 
 def _known_optional_columns() -> set[str]:
@@ -139,6 +139,7 @@ def save_document(
     document_id: str,
     file_name: str,
     document_type: str,
+    title: str | None = None,
     extracted_text: str = '',
     processing_status: str = 'uploaded',
     storage_path: str | None = None,
@@ -166,6 +167,8 @@ def save_document(
         # path under the document id when no file upload was performed.
         row['storage_path'] = storage_path or f"{document_id}/{file_name}"
         optional = _known_optional_columns()
+        if 'title' in optional and title is not None:
+            row['title'] = title
         if 'error_message' in optional and error_message is not None:
             row['error_message'] = error_message
         if 'page_count' in optional and page_count is not None:
@@ -201,7 +204,7 @@ def update_document(
 
     allowed = {
         'processing_status', 'extracted_text', 'storage_path', 'file_name',
-        'document_type',
+        'document_type', 'title',
     } | set(_OPTIONAL_COLUMNS)
     row = {key: value for key, value in fields.items() if key in allowed and value is not None}
     optional = _known_optional_columns()

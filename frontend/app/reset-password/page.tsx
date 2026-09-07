@@ -34,13 +34,10 @@ function ResetPasswordCard() {
     return () => clearTimeout(timer);
   }, []);
 
-  useEffect(() => {
-    if (ready && !session) {
-      setError(
-        "This reset link is invalid or has expired. Please request a new one."
-      );
-    }
-  }, [ready, session]);
+  const sessionError = ready && !session
+    ? "This reset link is invalid or has expired. Please request a new one."
+    : null;
+  const visibleError = error ?? sessionError;
 
   function validate(): boolean {
     if (!password) {
@@ -138,13 +135,13 @@ function ResetPasswordCard() {
           </div>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
-            {error ? (
+            {visibleError ? (
               <div
                 role="alert"
                 className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
               >
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{error}</span>
+                <span>{visibleError}</span>
               </div>
             ) : null}
 

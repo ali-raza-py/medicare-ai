@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import DocumentCard from "@/components/DocumentCard";
-import { DEMO_DOCUMENTS, type DemoDocument } from "@/lib/demo-data";
+import type { DocumentViewModel } from "@/lib/document-constants";
 import { getAllDocuments } from "@/lib/uploaded-documents";
 
 export default function RecentDocuments() {
-  const [docs, setDocs] = useState<DemoDocument[]>(DEMO_DOCUMENTS);
+  const [docs, setDocs] = useState<DocumentViewModel[]>([]);
 
   useEffect(() => {
     const update = () => setDocs(getAllDocuments());

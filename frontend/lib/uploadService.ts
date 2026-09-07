@@ -37,7 +37,7 @@ export async function uploadFilesDemo(files: File[], onFileProgress?: (index:num
 // Example of how to wire a real backend upload using XMLHttpRequest for progress reporting.
 // Keep as reference; don't export this by default.
 export function uploadFileXHR(file: File, url: string, onProgress?: UploadProgressCallback): Promise<UploadResult> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
     const form = new FormData();
     form.append("file", file);
@@ -57,7 +57,7 @@ export function uploadFileXHR(file: File, url: string, onProgress?: UploadProgre
         try {
           const json = JSON.parse(xhr.responseText);
           resolve({ success: true, uploadedAt: json.uploadedAt || new Date().toISOString() });
-        } catch (e) {
+        } catch {
           resolve({ success: true, uploadedAt: new Date().toISOString() });
         }
       } else {

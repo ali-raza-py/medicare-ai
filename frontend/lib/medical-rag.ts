@@ -70,22 +70,11 @@ const makeLocalMedicalAnswer = (
   question: string,
   documents: MedicalDocumentRecord[],
 ): MedicalAnswerResponse => {
-  const lower = normalizeText(question);
   const evidence = buildEvidence(documents, question);
 
-  let answer =
-    'The uploaded records do not contain enough evidence to make a definitive medical claim. Based on the available documents, the clearest relevant information is summarized below.';
-
-  if (lower.includes('change') || lower.includes('compare') || lower.includes('what changed')) {
-    answer =
-      'The record comparison shows improved blood pressure and lower HbA1c values in the latest report, and the medication review was updated to add a lifestyle follow-up plan. These are changes visible in the uploaded records, not a diagnosis.';
-  } else if (lower.includes('blood pressure') || lower.includes('bp')) {
-    answer =
-      'The uploaded records show an improving blood pressure trend over time, with the most recent note documenting 122/78 compared with 128/82 in the earlier assessment.';
-  } else if (lower.includes('medication') || lower.includes('medicine')) {
-    answer =
-      'Medication notes in the uploaded records reference ongoing treatment with Metformin and indicate an updated lifestyle follow-up plan in the latest record.';
-  }
+  const answer = evidence.length > 0
+    ? `The available records contain relevant text, but this local helper does not interpret medical findings. Review the cited excerpts with a qualified clinician.\n\n${evidence.map((item) => item.snippet).join('\n\n')}`
+    : 'The uploaded records do not contain enough evidence to answer this question. Please upload a relevant document or consult a qualified clinician.';
 
   return {
     answer,
@@ -120,59 +109,32 @@ export function generateMedicalAnswer(
   };
 }
 
-const extractFieldLabel = (text: string) => {
-  const lower = normalizeText(text);
-
-  if (lower.includes('blood pressure')) return 'Blood pressure';
-  if (lower.includes('hba1c') || lower.includes('hemoglobin a1c')) return 'HbA1c';
-  if (lower.includes('medication')) return 'Medication';
-  if (lower.includes('weight')) return 'Weight';
-  if (lower.includes('lab')) return 'Lab values';
-
-  return 'Clinical observation';
-};
-
 export function compareMedicalReports(
   input: MedicalComparisonRequest,
 ): MedicalComparisonResponse {
-  const left = normalizeText(input.leftReport ?? '');
-  const right = normalizeText(input.rightReport ?? '');
-
-  const changes: MedicalComparisonRow[] = [
-    {
-      field: 'Blood pressure',
-      previousValue: left.includes('128/82') ? '128/82' : 'Earlier record',
-      currentValue: right.includes('122/78') ? '122/78' : 'Recent record',
-      changeType: right.includes('122/78') ? 'updated' : 'unchanged',
-      detail: 'Recent report shows a lower blood pressure value than the earlier assessment.',
-    },
-    {
-      field: 'HbA1c',
-      previousValue: left.includes('6.8') ? '6.8%' : 'Earlier record',
-      currentValue: right.includes('6.4') ? '6.4%' : 'Recent record',
-      changeType: right.includes('6.4') ? 'updated' : 'unchanged',
-      detail: 'The latest report reflects a lower glycated hemoglobin value compared with the previous report.',
-    },
-    {
-      field: 'Medication summary',
-      previousValue: left.includes('metformin') ? 'Metformin' : 'Earlier plan',
-      currentValue: right.includes('lifestyle') ? 'Metformin + lifestyle follow-up' : 'Current plan',
-      changeType: right.includes('lifestyle') ? 'updated' : 'unchanged',
-      detail: 'The medication note in the later record includes an updated lifestyle and follow-up recommendation.',
-    },
-  ];
-
-  const meaningful = changes.filter(
-    (entry) => entry.changeType === 'updated' || entry.changeType === 'added',
-  );
+  const leftLines = (input.leftReport ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const rightLines = (input.rightReport ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const same = leftLines.join('\n') === rightLines.join('\n');
+  const meaningful: MedicalComparisonRow[] = same
+    ? [{
+        field: 'Document text',
+        previousValue: 'No textual difference detected',
+        currentValue: 'No textual difference detected',
+        changeType: 'unchanged',
+        detail: 'No textual difference was detected in the extracted report text.',
+      }]
+    : [{
+        field: 'Document text',
+        previousValue: leftLines.slice(0, 3).join(' ') || 'Not present in earlier report',
+        currentValue: rightLines.slice(0, 3).join(' ') || 'Not present in current report',
+        changeType: 'updated',
+        detail: 'Text differs between the two uploaded reports. Review the source reports with a clinician for interpretation.',
+      }];
 
   return {
     summary:
-      'The latest report reflects improved blood pressure and lower HbA1c compared with the earlier record, with an updated medication follow-up plan.',
-    changes: meaningful.map((entry): MedicalComparisonRow => ({
-      ...entry,
-      field: extractFieldLabel(entry.field),
-    })),
+      'Comparison completed using extracted text from both uploaded reports. Differences are shown without clinical interpretation.',
+    changes: meaningful,
     provider: process.env.MEDICARE_AI_PROVIDER ?? 'local',
     model: process.env.MEDICARE_AI_MODEL ?? 'local-deterministic',
   };

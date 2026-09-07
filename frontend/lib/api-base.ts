@@ -14,9 +14,9 @@ function normalizeApiBase(raw: string | undefined): string {
 
 const fromEnv = normalizeApiBase(process.env.NEXT_PUBLIC_API_BASE_URL);
 
-export const API_BASE =
-  fromEnv ||
-  'http://localhost:8000';
+// Keep localhost convenient for local development, but never make a deployed
+// browser call its visitor's machine by accident.
+export const API_BASE = fromEnv || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : '');
 
 export function isApiBaseConfigured(): boolean {
   return API_BASE.length > 0;

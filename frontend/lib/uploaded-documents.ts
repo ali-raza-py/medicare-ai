@@ -1,10 +1,8 @@
-// Demo-mode client-side store for uploaded documents.
-// Persists upload metadata to localStorage so uploads survive page navigation.
-// Replaced by real backend data once API integration is complete — no real
-// patient files are stored here, only metadata (name, size, type, timestamp).
+// Legacy client-side upload metadata helpers. Backend records remain the
+// source of truth for all document screens and extracted medical content.
 
 import { useEffect, useState } from "react";
-import { DEMO_DOCUMENTS, type DemoDocument } from "./demo-data";
+import type { DocumentViewModel } from "./document-constants";
 
 export type UploadedDocument = {
   id: string;
@@ -60,8 +58,9 @@ export function subscribeToUploadedDocuments(callback: () => void) {
   };
 }
 
-// Convert stored upload metadata into the DemoDocument shape the UI uses.
-export function uploadedToDemoDocument(d: UploadedDocument): DemoDocument {
+// Convert stored metadata into the neutral document view model used by the
+// legacy upload summary only; backend records remain authoritative.
+export function uploadedToDocumentViewModel(d: UploadedDocument): DocumentViewModel {
   return {
     id: d.id,
     name: d.name,
@@ -78,8 +77,8 @@ export function uploadedToDemoDocument(d: UploadedDocument): DemoDocument {
 }
 
 // Uploaded documents first (newest on top), then the built-in demo library.
-export function getAllDocuments(): DemoDocument[] {
-  return [...getUploadedDocuments().map(uploadedToDemoDocument), ...DEMO_DOCUMENTS];
+export function getAllDocuments(): DocumentViewModel[] {
+  return getUploadedDocuments().map(uploadedToDocumentViewModel);
 }
 
 // React hook: live list of uploaded documents (re-renders on any change).

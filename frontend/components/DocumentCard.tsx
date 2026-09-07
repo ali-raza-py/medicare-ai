@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
-import type { DemoDocument } from "@/lib/demo-data";
-import { KIND_ICONS, FLAG_LABELS, FLAG_STYLES } from "@/lib/document-constants";
+import { KIND_ICONS, type DocumentViewModel } from "@/lib/document-constants";
 
 // Honest processing-state chip, shown only when a document is not fully
 // processed. 'failed' documents must be visibly different from healthy ones.
@@ -26,7 +25,7 @@ export default function DocumentCard({
   onDelete,
   isDeleting = false,
 }: {
-  doc: DemoDocument;
+  doc: DocumentViewModel;
   onDelete?: (id: string) => void;
   isDeleting?: boolean;
 }) {
@@ -41,7 +40,7 @@ export default function DocumentCard({
   }[doc.kind];
 
   return (
-    <article className={`group rounded-2xl border border-white/20 bg-gradient-to-br ${gradientClass} backdrop-blur-xl p-4 shadow-xl transition-all duration-300 hover:border-white/30 hover:shadow-2xl hover:scale-105`}>
+    <article className={`group interactive-lift rounded-2xl border border-white/20 bg-gradient-to-br ${gradientClass} p-4 shadow-xl backdrop-blur-xl hover:border-white/30 hover:shadow-2xl`}>
       <div className="flex items-start gap-3">
         {/* Document type icon */}
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/10 text-slate-600 group-hover:bg-white/20 group-hover:text-teal-600 transition-all duration-300 backdrop-blur-sm border border-white/10">
@@ -60,7 +59,9 @@ export default function DocumentCard({
             </p>
             <span className="text-xs text-slate-400">·</span>
             <p className="text-xs text-slate-600">
-              {doc.pages} page{doc.pages > 1 ? "s" : ""}
+              {doc.pages > 0
+                ? `${doc.pages} page${doc.pages > 1 ? "s" : ""}`
+                : "Page count unavailable"}
             </p>
             {chipStyle && (
               <span
@@ -73,12 +74,6 @@ export default function DocumentCard({
           </Link>
         </div>
 
-        {/* Flag badge - glassmorphic */}
-        <span
-          className={`ml-2 shrink-0 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm ${FLAG_STYLES[doc.flag]} border border-white/20`}
-        >
-          {FLAG_LABELS[doc.flag]}
-        </span>
         {onDelete && (
           <button
             type="button"
@@ -86,7 +81,7 @@ export default function DocumentCard({
             title="Delete Permanently"
             onClick={() => onDelete(doc.id)}
             disabled={isDeleting}
-            className="inline-flex shrink-0 items-center rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
+            className="interactive-lift inline-flex shrink-0 items-center rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
           >
             <Trash2 className={`h-4 w-4 ${isDeleting ? "animate-pulse" : ""}`} />
           </button>

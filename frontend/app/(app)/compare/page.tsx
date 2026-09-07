@@ -143,7 +143,7 @@ export default function ComparePage() {
   const rightOptions = processedDocs.filter((doc) => doc.id !== leftId);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6">
+    <div className="animate-page-enter mx-auto w-full max-w-6xl space-y-6">
       {/* Page header */}
       <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/5 to-cyan-500/5 backdrop-blur-xl p-6 shadow-lg">
         <div className="flex items-center gap-3">

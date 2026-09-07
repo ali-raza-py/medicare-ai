@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from backend.app.auth import AuthUser, ensure_jwt_configured, get_auth_user
-from backend.app.config import settings
+from backend.app.config import settings, validate_runtime_config
 from backend.app.document_pipeline import (
     NO_READABLE_TEXT,
     build_event_description,
@@ -52,6 +52,7 @@ app = FastAPI(title='MediCare AI Backend', version='0.1.0')
 # JWT signature verification is mandatory. In production a missing signing
 # secret must abort startup rather than run with insecure authentication.
 ensure_jwt_configured(settings.environment, settings.jwt_secret)
+validate_runtime_config()
 
 app.add_middleware(
     CORSMiddleware,
@@ -106,10 +107,11 @@ def _hydrate_from_supabase(document_id: str, current_user: AuthUser) -> Document
         return None
     text = str(row.get('extracted_text') or '')
     filename = str(row.get('file_name') or document_id)
+    title = str(row.get('title') or filename)
     status = _normalize_status(row.get('processing_status'))
     document = DocumentRecord(
         document_id=str(row['id']),
-        title=filename,
+        title=title,
         filename=filename,
         content_type='application/octet-stream',
         text=text,
@@ -118,6 +120,7 @@ def _hydrate_from_supabase(document_id: str, current_user: AuthUser) -> Document
         processed=status == 'processed',
         created_at=str(row.get('created_at') or ''),
         owner=current_user.email,
+        owner_id=str(row.get('user_id') or '') or None,
         status=status,
         error_message=row.get('error_message'),
     )
@@ -128,7 +131,9 @@ def _hydrate_from_supabase(document_id: str, current_user: AuthUser) -> Document
 def _resolve_document(document_id: str, current_user: AuthUser) -> DocumentRecord | None:
     document = store.get(document_id)
     if document is not None:
-        if document.owner == current_user.email:
+        if document.owner_id and document.owner_id == current_user.sub:
+            return document
+        if not document.owner_id and current_user.email and document.owner == current_user.email:
             return document
 
         # Local records persist the email that was present at upload time. If
@@ -337,11 +342,17 @@ async def upload_document(
             document_id=document_id,
             file_name=file.filename,
             document_type=str(metadata.get('file_type') or 'document'),
+            title=title or file.filename,
             extracted_text='',
             processing_status='uploaded',
             storage_path=storage_path,
         )
         supabase_synced = saved is not None
+    if settings.environment.lower() not in {'development', 'test'} and not supabase_synced:
+        raise HTTPException(
+            status_code=503,
+            detail='Document persistence is unavailable. Please try again after Supabase is configured.',
+        )
 
     # ── Raw file → Supabase Storage (private 'medical-documents' bucket) ──
     storage_synced = False
@@ -358,6 +369,13 @@ async def upload_document(
             temp_file.write(chunk)
     if too_large:
         _remove_temp_file(temp_path)
+        if supabase_synced and owner_id:
+            supabase_service.update_document(
+                document_id,
+                user_id=owner_id,
+                processing_status='failed',
+                error_message='File too large. Maximum size is 50MB.',
+            )
         raise HTTPException(status_code=413, detail='File too large. Maximum size is 50MB.')
 
     if supabase_synced:
@@ -366,13 +384,26 @@ async def upload_document(
         )
         if not storage_synced:
             logger.warning('Document %s: raw file could not be uploaded to storage', document_id)
+            if settings.environment.lower() not in {'development', 'test'}:
+                storage_error = 'Original file could not be stored in Supabase Storage.'
+                supabase_service.update_document(
+                    document_id,
+                    user_id=owner_id,
+                    processing_status='failed',
+                    error_message=storage_error,
+                )
+                _remove_temp_file(temp_path)
+                raise HTTPException(status_code=503, detail=storage_error)
 
     # ── State 2: 'processing' — persisted before OCR runs, so a crash mid-OCR
     #    leaves an honest in-progress row instead of a silent hole ──
     if supabase_synced:
-        supabase_service.update_document(
+        status_saved = supabase_service.update_document(
             document_id, user_id=owner_id, processing_status='processing',
         )
+        if settings.environment.lower() not in {'development', 'test'} and not status_saved:
+            _remove_temp_file(temp_path)
+            raise HTTPException(status_code=503, detail='Document processing state could not be persisted.')
 
     # ── Real OCR extraction (PaddleOCR for images/scans, PyMuPDF for PDFs) ──
     ocr_result: dict[str, Any] | None = None
@@ -419,6 +450,7 @@ async def upload_document(
             processed=False,
             created_at=created_at,
             owner=current_user.email,
+            owner_id=current_user.sub,
             status='failed',
             error_message=error_message,
         )
@@ -459,13 +491,14 @@ async def upload_document(
         processed=True,
         created_at=created_at,
         owner=current_user.email,
+        owner_id=current_user.sub,
         status='processed',
         error_message=None,
     )
     store.add(doc)
 
     if supabase_synced:
-        supabase_service.update_document(
+        status_saved = supabase_service.update_document(
             document_id,
             user_id=owner_id,
             processing_status='processed',
@@ -473,6 +506,9 @@ async def upload_document(
             page_count=page_count,
             ocr_metadata=summarize_ocr_details(ocr_result) if ocr_result else None,
         )
+        if settings.environment.lower() not in {'development', 'test'} and not status_saved:
+            _remove_temp_file(temp_path)
+            raise HTTPException(status_code=503, detail='Processed document could not be persisted.')
 
     _remove_temp_file(temp_path)
     return {
@@ -485,7 +521,6 @@ async def upload_document(
         'error_message': None,
         'page_count': page_count,
     }
-    _remove_temp_file(temp_path)
 
 
 @app.delete('/api/documents/{document_id}')
@@ -561,7 +596,10 @@ def list_documents(
     documents = []
     seen_ids: set[str] = set()
     for document in store.list():
-        if document.owner != current_user.email:
+        if not (
+            (document.owner_id and document.owner_id == current_user.sub)
+            or (not document.owner_id and current_user.email and document.owner == current_user.email)
+        ):
             continue
         seen_ids.add(document.document_id)
         documents.append({
@@ -588,10 +626,11 @@ def list_documents(
                 continue
             text = str(row.get('extracted_text') or '')
             filename = str(row.get('file_name') or row_id)
+            title = str(row.get('title') or filename)
             row_status = _normalize_status(row.get('processing_status'))
             documents.append({
                 'document_id': row_id,
-                'title': filename,
+                'title': title,
                 'filename': filename,
                 'content_type': 'application/octet-stream',
                 'text': text,
@@ -691,6 +730,7 @@ def _auto_load_user_documents(current_user: AuthUser, limit: int = 3) -> list[Do
                 status=_normalize_status(row.get('processing_status')),
                 created_at=str(row.get('created_at') or ''),
                 owner=current_user.email,
+                owner_id=str(row.get('user_id') or '') or None,
             )
             store.documents[row_id] = document  # cache for this instance
             results.append(document)
@@ -766,9 +806,14 @@ def timeline(
     store belonging to the authenticated user. One event per document; only
     information that actually exists on the record is exposed."""
     events = []
+    seen_ids: set[str] = set()
     for document in store.list():
-        if document.owner != current_user.email:
+        if not (
+            (document.owner_id and document.owner_id == current_user.sub)
+            or (not document.owner_id and current_user.email and document.owner == current_user.email)
+        ):
             continue
+        seen_ids.add(document.document_id)
         event_type = classify_document_event(document.filename, document.text)
         metadata = {
             'filename': document.filename,
@@ -787,6 +832,32 @@ def timeline(
             documentId=document.document_id,
             metadata=metadata,
         ))
+    if supabase_service.is_available() and _is_uuid(current_user.sub):
+        for row in supabase_service.list_user_documents(user_id=current_user.sub):
+            document_id = str(row.get('id') or '')
+            if not document_id or document_id in seen_ids:
+                continue
+            filename = str(row.get('file_name') or document_id)
+            text = str(row.get('extracted_text') or '')
+            title = str(row.get('title') or filename)
+            status = _normalize_status(row.get('processing_status'))
+            metadata = {
+                'filename': filename,
+                'content_type': 'application/octet-stream',
+                'file_type': row.get('document_type'),
+                'processed': status == 'processed',
+                'status': status,
+            }
+            metadata = {key: value for key, value in metadata.items() if value is not None}
+            events.append(TimelineEvent(
+                id=f'evt-{document_id}',
+                date=str(row.get('created_at') or ''),
+                title=title,
+                type=classify_document_event(filename, text),
+                description=build_event_description(text),
+                documentId=document_id,
+                metadata=metadata,
+            ))
     events.sort(key=lambda event: event.date, reverse=True)
     return {'events': [event.model_dump() for event in events]}
 

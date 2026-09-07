@@ -1,11 +1,9 @@
 import {
-  DiagnosticResponse,
   MedicalDocumentRecord,
   MedicalAnswerRequest,
   MedicalAnswerResponse,
   MedicalComparisonRequest,
   MedicalComparisonResponse,
-  SymptomAnalysisRequest,
 } from '@/types/medical';
 import { apiUrl } from '@/lib/api-base';
 
@@ -95,25 +93,6 @@ export async function uploadAndProcessDocument(file: File): Promise<MedicalDocum
     status: 'Ready',
     summary: 'Uploaded and processed by the MediCare AI backend.',
   };
-}
-
-export async function analyzeSymptoms(payload: SymptomAnalysisRequest): Promise<DiagnosticResponse> {
-  try {
-    const response = await fetch(apiUrl('/api/diagnose'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Diagnostic API call failed:', error);
-    throw error;
-  }
 }
 
 export async function askMedicalQuestion(
@@ -310,6 +289,7 @@ export type BackendDocumentListItem = {
   processing_status: string;
   created_at: string | null;
   chunks: number;
+  page_count?: number | null;
   error_message?: string | null;
 };
 
@@ -362,6 +342,7 @@ function normalizeDocumentListItem(raw: unknown): BackendDocumentListItem | null
     processing_status: processingStatus ?? 'processing',
     created_at: typeof item.created_at === 'string' ? item.created_at : null,
     chunks: typeof item.chunks === 'number' ? item.chunks : 0,
+    page_count: typeof item.page_count === 'number' ? item.page_count : null,
     error_message: typeof item.error_message === 'string' ? item.error_message : null,
   };
 }

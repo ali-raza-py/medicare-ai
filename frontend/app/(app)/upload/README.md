@@ -1,6 +1,8 @@
 Upload page — Backend integration notes
 
-This Upload page currently runs in demo-mode (client-side simulated uploads). To connect to a real backend, follow these notes:
+This Upload page sends files to the authenticated FastAPI backend. The backend
+persists the document and extracted text; local browser storage is not a source
+of truth for medical records.
 
 Recommended API
 

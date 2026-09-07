@@ -8,10 +8,6 @@ export type MedCareUser = {
 export const SESSION_KEY = "medcare.session";
 export const SESSION_EVENT = "medcare:session-changed";
 
-// Demo credentials for testing (optional - actual signup/login uses Supabase)
-export const DEMO_EMAIL = "demo@medcare.ai";
-export const DEMO_PASSWORD = "medcare123";
-
 /**
  * Human-friendly display name derived from the account email
  * (e.g. "ayesha.khan@example.com" becomes "Ayesha Khan").

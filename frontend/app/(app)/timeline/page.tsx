@@ -135,7 +135,7 @@ export default function TimelinePage() {
   }, [events]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6">
+    <div className="animate-page-enter mx-auto w-full max-w-4xl space-y-6">
       {/* Page header with glassmorphism */}
       <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/5 to-cyan-500/5 backdrop-blur-xl p-6 shadow-lg">
         <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">

@@ -6,14 +6,10 @@ import {
   ChevronDown,
   FileText,
   AlertCircle,
-  Loader2,
-  FlaskConical,
-  ScanLine,
 } from "lucide-react";
 import DocumentCard from "@/components/DocumentCard";
-import { DEMO_DOCUMENTS, type DemoDocument } from "@/lib/demo-data";
-import { KIND_LABELS } from "@/lib/document-constants";
-import { deleteDocument, fetchDocuments, type BackendDocumentListItem } from "@/lib/api";
+import type { DocumentViewModel } from "@/lib/document-constants";
+import { deleteDocument, fetchDocuments } from "@/lib/api";
 
 const FILTER_OPTIONS = [
   { value: "all", label: "All documents" },
@@ -28,7 +24,7 @@ export default function DocumentsPage() {
     "all" | "lab" | "imaging" | "report"
   >("all");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [allDocs, setAllDocs] = useState<DemoDocument[]>(DEMO_DOCUMENTS);
+  const [allDocs, setAllDocs] = useState<DocumentViewModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -41,8 +37,8 @@ export default function DocumentsPage() {
       // Fetch backend documents — errors are now thrown, not silenced
       const backendDocs = await fetchDocuments();
 
-      // Convert backend docs to DemoDocument shape
-      const docs: DemoDocument[] = backendDocs.map((bd) => ({
+      // Convert backend docs to the document view model used by the cards.
+      const docs: DocumentViewModel[] = backendDocs.map((bd) => ({
         id: bd.id,
         name: bd.title,
         kind: 'report',
@@ -51,7 +47,7 @@ export default function DocumentsPage() {
               month: 'short', day: '2-digit', year: 'numeric',
             })
           : 'Recent',
-        pages: 1,
+        pages: bd.page_count ?? 0,
         status:
           bd.processing_status === 'failed'
             ? 'failed'
@@ -72,7 +68,9 @@ export default function DocumentsPage() {
 
   // Fetch backend documents on mount and refetch on focus
   useEffect(() => {
-    fetchAndMerge();
+    queueMicrotask(() => {
+      void fetchAndMerge();
+    });
     window.addEventListener("medcare-uploads-changed", fetchAndMerge);
     window.addEventListener("storage", fetchAndMerge);
     // Refetch on window focus to pick up backend changes from other tabs
@@ -121,9 +119,10 @@ export default function DocumentsPage() {
   const activeFilterLabel = FILTER_OPTIONS.find(
     (opt) => opt.value === activeFilter
   )?.label;
+  const hasActiveSearch = searchQuery.trim().length > 0 || activeFilter !== "all";
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6">
+    <div className="animate-page-enter mx-auto w-full max-w-6xl space-y-6">
       {/* Page header with glassmorphism */}
       <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/5 to-cyan-500/5 backdrop-blur-xl p-6 shadow-lg">
         <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
@@ -188,7 +187,7 @@ export default function DocumentsPage() {
 
       {/* Results info - glassmorphic counter */}
       <section className="flex items-center justify-between">
-        <div className="rounded-xl border border-white/20 bg-gradient-to-r from-teal-500/5 to-cyan-500/5 backdrop-blur-md px-4 py-2 shadow-lg">
+        <div className="rounded-xl border border-white/20 bg-gradient-to-r from-teal-500/5 to-cyan-500/5 px-4 py-2 shadow-lg backdrop-blur-md">
           <p className="text-sm font-medium text-slate-700">
             {filteredDocuments.length === 0 ? (
               <span className="text-slate-500">No documents found</span>
@@ -206,9 +205,18 @@ export default function DocumentsPage() {
 
       {/* Loading state */}
       {loading ? (
-        <section className="flex items-center justify-center rounded-2xl border border-white/20 bg-gradient-to-br from-slate-500/5 to-slate-400/5 backdrop-blur-xl p-12 shadow-lg">
-          <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
-          <span className="ml-3 text-sm text-slate-600">Loading documents...</span>
+        <section aria-label="Loading documents" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((item) => (
+            <div key={item} className="rounded-2xl border border-slate-200 bg-white/60 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="skeleton h-10 w-10 shrink-0 rounded-lg" />
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div className="skeleton h-4 w-3/4 rounded" />
+                  <div className="skeleton h-3 w-1/2 rounded" />
+                </div>
+              </div>
+            </div>
+          ))}
         </section>
       ) : error ? (
         /* Error state */
@@ -248,17 +256,17 @@ export default function DocumentsPage() {
         </section>
       ) : (
         /* Empty state - glassmorphic */
-        <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-slate-500/5 to-slate-400/5 backdrop-blur-xl p-12 text-center shadow-lg">
+        <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-slate-500/5 to-slate-400/5 p-12 text-center shadow-lg backdrop-blur-xl">
           <div className="flex justify-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 text-slate-400 backdrop-blur-md border border-white/20">
               <FileText className="h-8 w-8" />
             </span>
           </div>
           <h3 className="mt-4 text-base font-semibold text-slate-900">
-            No documents found
+            {hasActiveSearch ? "No matching documents" : "No documents yet"}
           </h3>
           <p className="mt-2 text-sm text-slate-600">
-            {searchQuery
+            {hasActiveSearch
               ? "Try adjusting your search terms or filters."
               : "No documents in your library yet. Upload one to get started."}
           </p>
