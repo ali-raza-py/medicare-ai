@@ -140,27 +140,30 @@ export default async function DashboardPage() {
       .toUpperCase() || "MC";
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6">
+    <div className="animate-page-enter mx-auto w-full max-w-7xl space-y-8">
       {/* Welcome + profile summary */}
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+      <section className="relative flex flex-col gap-6 overflow-hidden rounded-[2rem] bg-[#073f3c] p-7 text-white shadow-[0_18px_44px_rgba(7,63,60,0.16)] sm:p-9 lg:flex-row lg:items-center lg:justify-between">
+        <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full border-[38px] border-[#2c8375]/40" />
+        <div className="pointer-events-none absolute -bottom-32 right-40 h-56 w-56 rounded-full border-[28px] border-[#0b5a54]/80" />
+        <div className="relative">
+          <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-[#80e6d0]">Your health workspace</p>
+          <h2 className="mt-3 text-4xl font-extrabold tracking-[-0.05em] sm:text-5xl">
             Welcome back, {firstName}
           </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Here is an overview of your health records.
+          <p className="mt-3 max-w-lg text-sm leading-6 text-[#c3e1da]">
+            Keep your records close, see the bigger picture, and prepare for your next conversation with your care team.
           </p>
         </div>
 
-        <div className="flex items-center gap-4 rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/10 to-cyan-500/10 p-4 shadow-lg backdrop-blur-xl">
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-600 to-teal-700 text-sm font-semibold text-white shadow-md">
+        <div className="relative flex items-center gap-4 rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm lg:min-w-[18rem]">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#d8f3e9] text-sm font-extrabold text-[#123f3a] shadow-md">
             {initials}
           </span>
           <div className="text-sm">
-            <p className="font-semibold text-slate-900">{displayName}</p>
-            <p className="mt-0.5 text-slate-600">{email}</p>
-            <p className="mt-1 inline-flex rounded-full bg-white/40 px-2 py-0.5 text-xs font-medium text-slate-700 backdrop-blur-sm border border-white/20">
-              Signed in with Supabase
+            <p className="font-extrabold text-white">{displayName}</p>
+            <p className="mt-0.5 text-[#c3e1da]">{email}</p>
+            <p className="mt-2 inline-flex rounded-full bg-[#80e6d0]/15 px-2.5 py-1 text-xs font-bold text-[#a6f3e2]">
+              Private workspace
             </p>
           </div>
         </div>
@@ -174,15 +177,15 @@ export default async function DashboardPage() {
             <Link
               key={cta.href}
               href={cta.href}
-              className={`group flex items-start gap-4 rounded-2xl border p-5 shadow-lg transition-all duration-300 backdrop-blur-xl ${
+              className={`group flex items-start gap-4 rounded-3xl border p-5 shadow-[0_10px_26px_rgba(31,65,55,0.06)] transition-all duration-300 ${
                 cta.primary
-                  ? "border-white/20 bg-gradient-to-br from-teal-600/90 to-cyan-600/90 text-white hover:from-teal-600 hover:to-cyan-600 hover:shadow-2xl hover:scale-105"
-                  : "border-white/20 bg-white/40 text-slate-900 hover:bg-white/50 hover:border-white/30"
+                  ? "border-[#0b9b8e] bg-[#0b9b8e] text-white hover:-translate-y-1 hover:bg-[#087c72] hover:shadow-[0_18px_32px_rgba(11,155,142,0.2)]"
+                  : "border-[#dfebe6] bg-white text-slate-900 hover:-translate-y-1 hover:border-[#9ed8ce] hover:shadow-[0_18px_32px_rgba(31,65,55,0.1)]"
               }`}
             >
               <span
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-                  cta.primary ? "bg-white/20" : "bg-teal-100/60 text-teal-700"
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                  cta.primary ? "bg-white/20" : "bg-[#dff7ef] text-[#0b9b8e]"
                 }`}
               >
                 <Icon className="h-5 w-5" />
@@ -209,14 +212,14 @@ export default async function DashboardPage() {
         timelineCount={timelineEvents.length}
         timelinePreview={
           /* Timeline preview — real data */
-        <div className="rounded-2xl border border-white/20 bg-gradient-to-br from-teal-500/10 to-cyan-500/10 p-5 shadow-lg backdrop-blur-xl lg:col-span-2">
+        <div className="rounded-3xl border border-[#bfe9dc] bg-[#eaf8f3] p-5 shadow-[0_10px_26px_rgba(31,65,55,0.06)] lg:col-span-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900">
+            <h3 className="text-base font-extrabold tracking-tight text-slate-900">
               Timeline preview
             </h3>
             <Link
               href="/timeline"
-              className="flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-800 transition-colors"
+              className="flex items-center gap-1 text-sm font-bold text-[#0b9b8e] transition-colors hover:text-[#087c72]"
             >
               Full timeline <ArrowRight className="h-3.5 w-3.5" />
             </Link>
@@ -230,18 +233,18 @@ export default async function DashboardPage() {
               </p>
             </div>
           ) : (
-            <ol className="mt-5 ml-1.5 space-y-6 border-l-2 border-white/20 pl-5">
+            <ol className="mt-5 ml-1.5 space-y-6 border-l-2 border-[#bfe9dc] pl-5">
               {timelineEvents.slice(0, 4).map((event) => {
                 const Icon = TIMELINE_ICONS[event.type] ?? ClipboardList;
                 return (
                   <li key={event.id} className="relative">
-                    <span className="absolute -left-[27px] top-1 flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-teal-600 to-cyan-600 ring-4 ring-white/30">
+                    <span className="absolute -left-[27px] top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#0b9b8e] ring-4 ring-[#eaf8f3]">
                       <Icon className="h-2.5 w-2.5 text-white" />
                     </span>
-                    <p className="text-xs font-semibold text-teal-700">
+                    <p className="text-xs font-bold text-[#0b9b8e]">
                       {formatShortDate(event.date)}
                     </p>
-                    <p className="mt-1 text-sm leading-relaxed text-slate-900 font-medium">
+                    <p className="mt-1 text-sm font-bold leading-relaxed text-slate-900">
                       {event.title}
                     </p>
                     <p className="mt-0.5 text-xs text-slate-600">

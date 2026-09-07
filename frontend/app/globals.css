@@ -18,6 +18,13 @@ body {
   font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
 }
 
+h1,
+h2,
+h3 {
+  font-family: var(--font-display), var(--font-geist-sans), sans-serif;
+  letter-spacing: -0.035em;
+}
+
 /* ── Chat message animations ─────────────────────────────────── */
 
 @keyframes fade-in-up {
@@ -72,6 +79,19 @@ body {
 
 .animate-page-enter {
   animation: page-enter 0.28s ease-out both;
+}
+
+@keyframes medical-float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(var(--medical-rotation, 0deg));
+  }
+  50% {
+    transform: translate3d(0, -10px, 0) rotate(var(--medical-rotation, 0deg));
+  }
+}
+
+.medical-float {
+  animation: medical-float 8s ease-in-out infinite;
 }
 
 .interactive-lift {

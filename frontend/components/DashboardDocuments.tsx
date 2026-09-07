@@ -143,14 +143,14 @@ export default function DashboardDocuments({
       {/* Recent documents + timeline preview */}
       <section className="grid gap-6 lg:grid-cols-5">
         {/* Recent documents — real data */}
-        <div className="rounded-2xl border border-white/20 bg-white/40 shadow-lg backdrop-blur-xl lg:col-span-3">
-          <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-            <h3 className="text-sm font-semibold text-slate-900">
+        <div className="rounded-3xl border border-[#dfebe6] bg-white shadow-[0_10px_26px_rgba(31,65,55,0.06)] lg:col-span-3">
+          <div className="flex items-center justify-between border-b border-[#edf2ef] px-5 py-5">
+            <h3 className="text-base font-extrabold tracking-tight text-slate-900">
               Recent documents
             </h3>
             <Link
               href="/documents"
-              className="flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-800 transition-colors"
+              className="flex items-center gap-1 text-sm font-bold text-[#0b9b8e] transition-colors hover:text-[#087c72]"
             >
               View all <ArrowRight className="h-3.5 w-3.5" />
             </Link>
@@ -185,7 +185,7 @@ export default function DashboardDocuments({
                 return (
                   <li
                     key={doc.id}
-                    className="px-5 py-3.5 hover:bg-white/20 transition-colors"
+                    className="px-5 py-3.5 transition-colors hover:bg-[#f3faf7]"
                   >
                     <Link
                       href={`/documents/${doc.id}`}
