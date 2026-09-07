@@ -24,6 +24,7 @@ class AuthUser(BaseModel):
     sub: str
     email: str | None = None
     aud: str | None = None
+    role: str | None = None
 
 
 def ensure_jwt_configured(environment: str, jwt_secret: str | None) -> None:
@@ -86,10 +87,12 @@ def _verify_via_jwks(token: str) -> AuthUser | None:
         return None
     email = payload.get('email')
     aud = payload.get('aud')
+    role = payload.get('role')
     return AuthUser(
         sub=str(payload['sub']),
         email=email if isinstance(email, str) else None,
         aud=aud if isinstance(aud, str) else None,
+        role=role if isinstance(role, str) else None,
     )
 
 
@@ -121,10 +124,12 @@ def _verify_via_supabase(token: str) -> AuthUser | None:
     if not sub:
         return None
     email = user.get('email')
+    role = user.get('user_metadata', {}).get('role') if isinstance(user.get('user_metadata'), dict) else None
     return AuthUser(
         sub=str(sub),
         email=email if isinstance(email, str) else None,
         aud='authenticated',
+        role=role if isinstance(role, str) else None,
     )
 
 
@@ -173,7 +178,13 @@ def get_auth_user(
         if payload is not None:
             email = payload.get('email')
             aud = payload.get('aud')
-            return AuthUser(sub=str(payload['sub']), email=email if isinstance(email, str) else None, aud=aud if isinstance(aud, str) else None)
+            role = payload.get('role')
+            return AuthUser(
+                sub=str(payload['sub']),
+                email=email if isinstance(email, str) else None,
+                aud=aud if isinstance(aud, str) else None,
+                role=role if isinstance(role, str) else None,
+            )
     else:
         logger.error(
             'MEDICARE_JWT_SECRET is not set — falling back to Supabase JWKS '

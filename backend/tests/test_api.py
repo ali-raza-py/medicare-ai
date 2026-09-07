@@ -14,13 +14,13 @@ JWT_SECRET = os.environ.get("MEDICARE_JWT_SECRET", "test-jwt-secret-for-pytest-o
 client = TestClient(app)
 
 
-def _make_token(email: str = "test@example.com") -> str:
+def _make_token(email: str = "test@example.com", role: str = "patient") -> str:
     """Create a test JWT that the backend's auth dependency will accept."""
-    return jwt.encode({"sub": email, "email": email, "aud": "test"}, JWT_SECRET, algorithm="HS256")
+    return jwt.encode({"sub": email, "email": email, "aud": "test", "role": role}, JWT_SECRET, algorithm="HS256")
 
 
-def _auth_headers(email: str = "test@example.com") -> dict[str, str]:
-    return {"Authorization": f"Bearer {_make_token(email)}"}
+def _auth_headers(email: str = "test@example.com", role: str = "patient") -> dict[str, str]:
+    return {"Authorization": f"Bearer {_make_token(email, role=role)}"}
 
 
 @pytest.fixture(autouse=True)
@@ -410,6 +410,135 @@ def test_timeline_only_returns_owners_documents() -> None:
     events = response.json()['events']
     assert len(events) == 1
     assert events[0]['documentId'] != ''
+
+
+def test_patient_can_grant_and_revoke_hospital_access() -> None:
+    patient_email = 'patient-alpha@example.com'
+    hospital_email = 'memorial@example.com'
+
+    upload = client.post(
+        '/api/documents/upload',
+        files={'file': ('alpha.pdf', b'%PDF-1.4\nalpha patient record\n%%EOF\n', 'application/pdf')},
+        headers=_auth_headers(patient_email),
+    )
+    patient_doc_id = upload.json()['document_id']
+
+    grant = client.post(
+        '/api/patient/hospital-access',
+        json={'hospital_email': hospital_email},
+        headers=_auth_headers(patient_email),
+    )
+    assert grant.status_code == 200
+    assert grant.json()['status'] == 'ACTIVE'
+
+    patient_perms = client.get('/api/patient/hospital-access', headers=_auth_headers(patient_email))
+    assert patient_perms.status_code == 200
+    assert any(item['hospital_email'] == hospital_email for item in patient_perms.json())
+
+    hospital_list = client.get('/api/hospital/patients', headers=_auth_headers(hospital_email, role='hospital'))
+    assert hospital_list.status_code == 200
+    assert any(item['patient_email'] == patient_email for item in hospital_list.json())
+
+    hospital_detail = client.get(
+        f'/api/hospital/patients/{patient_email}',
+        headers=_auth_headers(hospital_email, role='hospital'),
+    )
+    assert hospital_detail.status_code == 200
+    assert hospital_detail.json()['patient_email'] == patient_email
+
+    hospital_doc = client.get(
+        f'/api/documents/{patient_doc_id}',
+        headers=_auth_headers(hospital_email, role='hospital'),
+    )
+    assert hospital_doc.status_code == 200
+
+    revoke = client.delete(
+        f'/api/patient/hospital-access/{hospital_email}',
+        headers=_auth_headers(patient_email),
+    )
+    assert revoke.status_code == 200
+    assert revoke.json()['status'] == 'REVOKED'
+
+    after_revoke = client.get(
+        f'/api/documents/{patient_doc_id}',
+        headers=_auth_headers(hospital_email, role='hospital'),
+    )
+    assert after_revoke.status_code == 403
+
+
+def test_hospital_cannot_access_unrelated_patient() -> None:
+    patient_a_email = 'patient-a@example.com'
+    patient_b_email = 'patient-b@example.com'
+    hospital_email = 'city-hospital@example.com'
+
+    upload_a = client.post(
+        '/api/documents/upload',
+        files={'file': ('a.pdf', b'%PDF-1.4\nsecret a\n%%EOF\n', 'application/pdf')},
+        headers=_auth_headers(patient_a_email),
+    )
+    upload_b = client.post(
+        '/api/documents/upload',
+        files={'file': ('b.pdf', b'%PDF-1.4\nsecret b\n%%EOF\n', 'application/pdf')},
+        headers=_auth_headers(patient_b_email),
+    )
+
+    grant = client.post(
+        '/api/patient/hospital-access',
+        json={'hospital_email': hospital_email},
+        headers=_auth_headers(patient_a_email),
+    )
+    assert grant.status_code == 200
+
+    forbidden = client.get(
+        f'/api/documents/{upload_b.json()["document_id"]}',
+        headers=_auth_headers(hospital_email, role='hospital'),
+    )
+    assert forbidden.status_code == 403
+
+
+def test_patient_cannot_alter_another_patients_permissions() -> None:
+    patient_a_email = 'a@example.com'
+    patient_b_email = 'b@example.com'
+    hospital_email = 'third-party@example.com'
+
+    response = client.post(
+        '/api/patient/hospital-access',
+        json={'hospital_email': hospital_email},
+        headers=_auth_headers(patient_a_email),
+    )
+    assert response.status_code == 200
+
+    other = client.post(
+        '/api/patient/hospital-access',
+        json={'hospital_email': hospital_email},
+        headers=_auth_headers(patient_b_email),
+    )
+    assert other.status_code == 200
+
+    patient_a_access = client.get('/api/patient/hospital-access', headers=_auth_headers(patient_a_email))
+    patient_b_access = client.get('/api/patient/hospital-access', headers=_auth_headers(patient_b_email))
+    assert len(patient_a_access.json()) == 1
+    assert len(patient_b_access.json()) == 1
+
+
+def test_non_patient_cannot_manage_patient_permissions() -> None:
+    hospital_headers = _auth_headers('hospital@example.com', role='hospital')
+
+    grant = client.post(
+        '/api/patient/hospital-access',
+        json={'hospital_email': 'another-hospital@example.com'},
+        headers=hospital_headers,
+    )
+    assert grant.status_code == 403
+
+    listed = client.get('/api/patient/hospital-access', headers=hospital_headers)
+    assert listed.status_code == 403
+
+    revoked = client.delete(
+        '/api/patient/hospital-access/another-hospital@example.com',
+        headers=hospital_headers,
+    )
+    assert revoked.status_code == 403
 
 
 def test_document_list_only_returns_owners_documents() -> None:

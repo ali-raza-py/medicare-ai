@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { NAV_ITEMS } from "@/lib/navigation";
 import Logo from "@/components/Logo";
+import { useSession } from "@/lib/session";
 
 function NavLinks({
   onNavigate,
@@ -15,10 +16,15 @@ function NavLinks({
   expanded: boolean;
 }) {
   const pathname = usePathname();
+  const { user } = useSession();
 
   return (
     <nav className="flex-1 space-y-2 px-3" aria-label="Main navigation">
-      {NAV_ITEMS.map((item) => {
+      {NAV_ITEMS.filter((item) => {
+        if (item.href === "/hospital") return user?.role === "hospital";
+        if (item.href === "/permissions") return user?.role === "patient";
+        return true;
+      }).map((item) => {
         const active = pathname === item.href;
         const Icon = item.icon;
         return (

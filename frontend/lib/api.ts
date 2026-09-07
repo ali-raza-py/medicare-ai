@@ -392,6 +392,60 @@ export async function deleteDocument(documentId: string): Promise<void> {
   }
 }
 
+export type HospitalAccessEntry = {
+  patient_email: string;
+  hospital_email: string;
+  status: 'ACTIVE' | 'REVOKED';
+  granted_at: string | null;
+};
+
+async function parseApiError(response: Response, fallback: string): Promise<Error> {
+  try {
+    const body = await response.json();
+    if (typeof body.detail === 'string') return new Error(body.detail);
+  } catch {
+    // Keep the caller's fallback when the response is not JSON.
+  }
+  return new Error(fallback);
+}
+
+export async function fetchHospitalAccess(): Promise<HospitalAccessEntry[]> {
+  const response = await fetch(apiUrl('/api/patient/hospital-access'), {
+    headers: await authHeaders({ Accept: 'application/json' }),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw await parseApiError(response, `Failed to load hospital access (${response.status}).`);
+  return (await response.json()) as HospitalAccessEntry[];
+}
+
+export async function grantHospitalAccess(hospitalEmail: string): Promise<HospitalAccessEntry> {
+  const response = await fetch(apiUrl('/api/patient/hospital-access'), {
+    method: 'POST',
+    headers: await authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ hospital_email: hospitalEmail }),
+  });
+  if (!response.ok) throw await parseApiError(response, `Failed to grant hospital access (${response.status}).`);
+  return (await response.json()) as HospitalAccessEntry;
+}
+
+export async function revokeHospitalAccess(hospitalEmail: string): Promise<HospitalAccessEntry> {
+  const response = await fetch(apiUrl(`/api/patient/hospital-access/${encodeURIComponent(hospitalEmail)}`), {
+    method: 'DELETE',
+    headers: await authHeaders({ Accept: 'application/json' }),
+  });
+  if (!response.ok) throw await parseApiError(response, `Failed to revoke hospital access (${response.status}).`);
+  return (await response.json()) as HospitalAccessEntry;
+}
+
+export async function fetchHospitalPatients(): Promise<HospitalAccessEntry[]> {
+  const response = await fetch(apiUrl('/api/hospital/patients'), {
+    headers: await authHeaders({ Accept: 'application/json' }),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw await parseApiError(response, `Failed to load authorized patients (${response.status}).`);
+  return (await response.json()) as HospitalAccessEntry[];
+}
+
 export type BackendDocumentDetail = BackendDocumentListItem & {
   text: string;
   metadata: Record<string, unknown>;

@@ -24,9 +24,14 @@ export function useSession(): { user: MedCareUser | null; isLoading: boolean } {
       } = await supabase.auth.getUser();
 
       if (authUser?.email) {
+        const hospitalName = typeof authUser.user_metadata?.hospital_name === "string"
+          ? authUser.user_metadata.hospital_name.trim()
+          : "";
         setUser({
-          name: displayNameFromEmail(authUser.email),
+          name: hospitalName || displayNameFromEmail(authUser.email),
           email: authUser.email,
+          role: authUser.user_metadata?.role === "hospital" ? "hospital" : "patient",
+          hospitalName: hospitalName || null,
         });
       } else {
         setUser(null);
@@ -41,9 +46,14 @@ export function useSession(): { user: MedCareUser | null; isLoading: boolean } {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user?.email) {
+        const hospitalName = typeof session.user.user_metadata?.hospital_name === "string"
+          ? session.user.user_metadata.hospital_name.trim()
+          : "";
         setUser({
-          name: displayNameFromEmail(session.user.email),
+          name: hospitalName || displayNameFromEmail(session.user.email),
           email: session.user.email,
+          role: session.user.user_metadata?.role === "hospital" ? "hospital" : "patient",
+          hospitalName: hospitalName || null,
         });
       } else {
         setUser(null);

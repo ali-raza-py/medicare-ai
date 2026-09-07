@@ -911,8 +911,8 @@ def grant_hospital_access(
     payload: HospitalAccessRequest,
     current_user: AuthUser = Depends(get_auth_user),
 ) -> dict[str, str | None]:
-    if current_user.role == 'hospital':
-        raise HTTPException(status_code=403, detail='Hospital accounts cannot grant access to other hospitals.')
+    if current_user.role != 'patient':
+        raise HTTPException(status_code=403, detail='Only patient accounts can manage hospital access.')
     patient_email = (current_user.email or '').strip().lower()
     hospital_email = payload.hospital_email.strip().lower()
     if not patient_email or not hospital_email:
@@ -932,6 +932,8 @@ def grant_hospital_access(
 def list_patient_hospital_access(
     current_user: AuthUser = Depends(get_auth_user),
 ) -> list[dict[str, str | None]]:
+    if current_user.role != 'patient':
+        raise HTTPException(status_code=403, detail='Only patient accounts can view hospital access.')
     patient_email = (current_user.email or '').strip().lower()
     if not patient_email:
         return []
@@ -951,6 +953,8 @@ def revoke_hospital_access(
     hospital_email: str,
     current_user: AuthUser = Depends(get_auth_user),
 ) -> dict[str, str | None]:
+    if current_user.role != 'patient':
+        raise HTTPException(status_code=403, detail='Only patient accounts can manage hospital access.')
     patient_email = (current_user.email or '').strip().lower()
     target_hospital = hospital_email.strip().lower()
     if not patient_email or not target_hospital:
