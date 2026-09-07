@@ -27,7 +27,7 @@ from backend.app.document_pipeline import (
 )
 from backend.app.providers import build_provider
 from backend.app.rag import build_medical_answer, compare_reports
-from backend.app.storage import DocumentRecord, build_document_store
+from backend.app.storage import DocumentRecord, build_document_store, build_permission_store
 from backend.app import supabase_service
 
 try:
@@ -65,6 +65,7 @@ app.add_middleware(
 logger = logging.getLogger(__name__)
 
 store = build_document_store(settings.upload_dir)
+permission_store = build_permission_store(settings.upload_dir)
 provider = build_provider()
 _ocr_job_lock = asyncio.Lock()
 
@@ -77,6 +78,23 @@ def _is_uuid(value: str | None) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _hospital_can_access_patient(hospital_email: str | None, patient_email: str | None) -> bool:
+    if not hospital_email or not patient_email:
+        return False
+    return permission_store.has_active_permission(patient_email.lower(), hospital_email.lower())
+
+
+class HospitalAccessRequest(BaseModel):
+    hospital_email: str = Field(..., min_length=1)
+
+
+class HospitalAccessEntry(BaseModel):
+    patient_email: str
+    hospital_email: str
+    status: str
+    granted_at: str | None = None
 
 
 def _normalize_status(value: Any) -> str:
@@ -131,6 +149,11 @@ def _hydrate_from_supabase(document_id: str, current_user: AuthUser) -> Document
 def _resolve_document(document_id: str, current_user: AuthUser) -> DocumentRecord | None:
     document = store.get(document_id)
     if document is not None:
+        if current_user.role == 'hospital':
+            patient_owner = document.owner or ''
+            if _hospital_can_access_patient(current_user.email, patient_owner):
+                return document
+            raise HTTPException(status_code=403, detail='Access denied.')
         if document.owner_id and document.owner_id == current_user.sub:
             return document
         if not document.owner_id and current_user.email and document.owner == current_user.email:
@@ -593,10 +616,19 @@ def list_documents(
     current_user: AuthUser = Depends(get_auth_user),
 ) -> list[dict[str, Any]]:
     """List the authenticated user's stored documents, newest first."""
+    if current_user.role == 'hospital':
+        permitted_patient_emails = {
+            record.patient_email for record in permission_store.list_hospital_permissions((current_user.email or '').lower(), active_only=True)
+        }
+        if not permitted_patient_emails:
+            return []
     documents = []
     seen_ids: set[str] = set()
     for document in store.list():
-        if not (
+        if current_user.role == 'hospital':
+            if document.owner not in permitted_patient_emails:
+                continue
+        elif not (
             (document.owner_id and document.owner_id == current_user.sub)
             or (not document.owner_id and current_user.email and document.owner == current_user.email)
         ):
@@ -619,6 +651,9 @@ def list_documents(
             else None,
         })
     # Merge documents persisted in Supabase that this instance hasn't seen.
+    if current_user.role == 'hospital':
+        documents.sort(key=lambda d: d['created_at'], reverse=True)
+        return documents
     if supabase_service.is_available() and _is_uuid(current_user.sub):
         for row in supabase_service.list_user_documents(user_id=current_user.sub):
             row_id = str(row.get('id') or '')
@@ -807,8 +842,17 @@ def timeline(
     information that actually exists on the record is exposed."""
     events = []
     seen_ids: set[str] = set()
+    if current_user.role == 'hospital':
+        permitted_patient_emails = {
+            record.patient_email for record in permission_store.list_hospital_permissions((current_user.email or '').lower(), active_only=True)
+        }
+        if not permitted_patient_emails:
+            return {'events': []}
     for document in store.list():
-        if not (
+        if current_user.role == 'hospital':
+            if document.owner not in permitted_patient_emails:
+                continue
+        elif not (
             (document.owner_id and document.owner_id == current_user.sub)
             or (not document.owner_id and current_user.email and document.owner == current_user.email)
         ):
@@ -860,6 +904,103 @@ def timeline(
             ))
     events.sort(key=lambda event: event.date, reverse=True)
     return {'events': [event.model_dump() for event in events]}
+
+
+@app.post('/api/patient/hospital-access', response_model=HospitalAccessEntry)
+def grant_hospital_access(
+    payload: HospitalAccessRequest,
+    current_user: AuthUser = Depends(get_auth_user),
+) -> dict[str, str | None]:
+    if current_user.role == 'hospital':
+        raise HTTPException(status_code=403, detail='Hospital accounts cannot grant access to other hospitals.')
+    patient_email = (current_user.email or '').strip().lower()
+    hospital_email = payload.hospital_email.strip().lower()
+    if not patient_email or not hospital_email:
+        raise HTTPException(status_code=400, detail='Valid patient and hospital emails are required.')
+    if patient_email == hospital_email:
+        raise HTTPException(status_code=400, detail='A hospital cannot be granted access to its own records.')
+    permission = permission_store.grant(patient_email, hospital_email)
+    return {
+        'patient_email': permission.patient_email,
+        'hospital_email': permission.hospital_email,
+        'status': permission.status,
+        'granted_at': permission.granted_at,
+    }
+
+
+@app.get('/api/patient/hospital-access', response_model=list[HospitalAccessEntry])
+def list_patient_hospital_access(
+    current_user: AuthUser = Depends(get_auth_user),
+) -> list[dict[str, str | None]]:
+    patient_email = (current_user.email or '').strip().lower()
+    if not patient_email:
+        return []
+    return [
+        {
+            'patient_email': record.patient_email,
+            'hospital_email': record.hospital_email,
+            'status': record.status,
+            'granted_at': record.granted_at or None,
+        }
+        for record in permission_store.list_patient_permissions(patient_email)
+    ]
+
+
+@app.delete('/api/patient/hospital-access/{hospital_email}', response_model=HospitalAccessEntry)
+def revoke_hospital_access(
+    hospital_email: str,
+    current_user: AuthUser = Depends(get_auth_user),
+) -> dict[str, str | None]:
+    patient_email = (current_user.email or '').strip().lower()
+    target_hospital = hospital_email.strip().lower()
+    if not patient_email or not target_hospital:
+        raise HTTPException(status_code=400, detail='A hospital email is required.')
+    permission = permission_store.revoke(patient_email, target_hospital)
+    if permission is None:
+        raise HTTPException(status_code=404, detail='No hospital access record was found.')
+    return {
+        'patient_email': permission.patient_email,
+        'hospital_email': permission.hospital_email,
+        'status': permission.status,
+        'granted_at': permission.granted_at,
+    }
+
+
+@app.get('/api/hospital/patients', response_model=list[HospitalAccessEntry])
+def list_hospital_patients(
+    current_user: AuthUser = Depends(get_auth_user),
+) -> list[dict[str, str | None]]:
+    if current_user.role != 'hospital':
+        raise HTTPException(status_code=403, detail='Only hospital accounts can list authorized patients.')
+    hospital_email = (current_user.email or '').strip().lower()
+    return [
+        {
+            'patient_email': record.patient_email,
+            'hospital_email': record.hospital_email,
+            'status': record.status,
+            'granted_at': record.granted_at or None,
+        }
+        for record in permission_store.list_hospital_permissions(hospital_email, active_only=True)
+    ]
+
+
+@app.get('/api/hospital/patients/{patient_email}', response_model=HospitalAccessEntry)
+def get_hospital_patient(
+    patient_email: str,
+    current_user: AuthUser = Depends(get_auth_user),
+) -> dict[str, str | None]:
+    if current_user.role != 'hospital':
+        raise HTTPException(status_code=403, detail='Only hospital accounts can inspect patient access.')
+    hospital_email = (current_user.email or '').strip().lower()
+    permission = permission_store.get(patient_email.strip().lower(), hospital_email)
+    if permission is None or permission.status != 'ACTIVE':
+        raise HTTPException(status_code=403, detail='Access denied.')
+    return {
+        'patient_email': permission.patient_email,
+        'hospital_email': permission.hospital_email,
+        'status': permission.status,
+        'granted_at': permission.granted_at,
+    }
 
 
 @app.get('/')

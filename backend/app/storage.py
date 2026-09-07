@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,124 @@ class DocumentRecord:
     # Honest processing state: 'uploaded' | 'processing' | 'processed' | 'failed'
     status: str = "uploaded"
     error_message: str | None = None
+
+
+@dataclass
+class HospitalPermissionRecord:
+    patient_email: str
+    hospital_email: str
+    status: str = 'ACTIVE'
+    granted_at: str = ''
+
+
+class InMemoryPermissionStore:
+    def __init__(self, base_dir: str | Path):
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.permissions: dict[str, HospitalPermissionRecord] = {}
+        self._load_existing()
+
+    def _load_existing(self) -> None:
+        path = self.base_dir / 'hospital_permissions.json'
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, OSError):
+            return
+        if not isinstance(data, list):
+            return
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            patient_email = str(item.get('patient_email') or '').strip().lower()
+            hospital_email = str(item.get('hospital_email') or '').strip().lower()
+            if not patient_email or not hospital_email:
+                continue
+            status = str(item.get('status') or 'ACTIVE').upper()
+            if status not in {'ACTIVE', 'REVOKED'}:
+                status = 'ACTIVE'
+            key = f'{patient_email}::{hospital_email}'
+            self.permissions[key] = HospitalPermissionRecord(
+                patient_email=patient_email,
+                hospital_email=hospital_email,
+                status=status,
+                granted_at=str(item.get('granted_at') or ''),
+            )
+
+    def _persist(self) -> None:
+        path = self.base_dir / 'hospital_permissions.json'
+        items = [
+            {
+                'patient_email': record.patient_email,
+                'hospital_email': record.hospital_email,
+                'status': record.status,
+                'granted_at': record.granted_at,
+            }
+            for record in sorted(self.permissions.values(), key=lambda item: (item.patient_email, item.hospital_email))
+        ]
+        path.write_text(json.dumps(items, ensure_ascii=False), encoding='utf-8')
+
+    def get(self, patient_email: str, hospital_email: str) -> HospitalPermissionRecord | None:
+        key = f'{str(patient_email).strip().lower()}::{str(hospital_email).strip().lower()}'
+        return self.permissions.get(key)
+
+    def list_patient_permissions(self, patient_email: str) -> list[HospitalPermissionRecord]:
+        target = str(patient_email).strip().lower()
+        return [
+            record for record in self.permissions.values()
+            if record.patient_email == target
+        ]
+
+    def list_hospital_permissions(self, hospital_email: str, active_only: bool = False) -> list[HospitalPermissionRecord]:
+        target = str(hospital_email).strip().lower()
+        records = [
+            record for record in self.permissions.values()
+            if record.hospital_email == target
+        ]
+        if active_only:
+            return [record for record in records if record.status == 'ACTIVE']
+        return records
+
+    def grant(self, patient_email: str, hospital_email: str) -> HospitalPermissionRecord:
+        patient = str(patient_email).strip().lower()
+        hospital = str(hospital_email).strip().lower()
+        key = f'{patient}::{hospital}'
+        existing = self.permissions.get(key)
+        if existing is not None:
+            existing.status = 'ACTIVE'
+            if not existing.granted_at:
+                existing.granted_at = datetime.now(timezone.utc).isoformat()
+            self._persist()
+            return existing
+        record = HospitalPermissionRecord(
+            patient_email=patient,
+            hospital_email=hospital,
+            status='ACTIVE',
+            granted_at=datetime.now(timezone.utc).isoformat(),
+        )
+        self.permissions[key] = record
+        self._persist()
+        return record
+
+    def revoke(self, patient_email: str, hospital_email: str) -> HospitalPermissionRecord | None:
+        patient = str(patient_email).strip().lower()
+        hospital = str(hospital_email).strip().lower()
+        key = f'{patient}::{hospital}'
+        record = self.permissions.get(key)
+        if record is None:
+            return None
+        record.status = 'REVOKED'
+        self._persist()
+        return record
+
+    def has_active_permission(self, patient_email: str, hospital_email: str) -> bool:
+        record = self.get(patient_email, hospital_email)
+        return record is not None and record.status == 'ACTIVE'
+
+
+def build_permission_store(base_dir: str | Path = './.uploads') -> InMemoryPermissionStore:
+    return InMemoryPermissionStore(base_dir)
 
 
 class InMemoryDocumentStore:
@@ -68,8 +187,14 @@ class InMemoryDocumentStore:
         Returns the number of documents successfully restored."""
         count = 0
         for json_file in self.base_dir.glob('*.json'):
+            if json_file.name == 'hospital_permissions.json':
+                continue
             try:
                 data = json.loads(json_file.read_text(encoding='utf-8'))
+                if not isinstance(data, dict):
+                    continue
+                if not data.get('document_id'):
+                    continue
                 doc = DocumentRecord(
                     document_id=data['document_id'],
                     title=data['title'],
@@ -90,7 +215,7 @@ class InMemoryDocumentStore:
                 )
                 self.documents[doc.document_id] = doc
                 count += 1
-            except (json.JSONDecodeError, KeyError, OSError):
+            except (json.JSONDecodeError, KeyError, OSError, TypeError, ValueError):
                 # Skip corrupted or incomplete files
                 continue
         return count
