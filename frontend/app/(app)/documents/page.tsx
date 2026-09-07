@@ -30,8 +30,8 @@ export default function DocumentsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Fetch ONLY backend documents for authenticated users
-  const fetchAndMerge = useCallback(async () => {
-    setLoading(true);
+  const fetchAndMerge = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       // Fetch backend documents — errors are now thrown, not silenced
@@ -66,30 +66,43 @@ export default function DocumentsPage() {
     }
   }, []);
 
+  const handleExternalRefresh = useCallback(() => {
+    void fetchAndMerge();
+  }, [fetchAndMerge]);
+
   // Fetch backend documents on mount and refetch on focus
   useEffect(() => {
     queueMicrotask(() => {
       void fetchAndMerge();
     });
-    window.addEventListener("medcare-uploads-changed", fetchAndMerge);
-    window.addEventListener("storage", fetchAndMerge);
+    window.addEventListener("medcare-uploads-changed", handleExternalRefresh);
+    window.addEventListener("storage", handleExternalRefresh);
     // Refetch on window focus to pick up backend changes from other tabs
-    window.addEventListener("focus", fetchAndMerge);
+    window.addEventListener("focus", handleExternalRefresh);
     return () => {
-      window.removeEventListener("medcare-uploads-changed", fetchAndMerge);
-      window.removeEventListener("storage", fetchAndMerge);
-      window.removeEventListener("focus", fetchAndMerge);
+      window.removeEventListener("medcare-uploads-changed", handleExternalRefresh);
+      window.removeEventListener("storage", handleExternalRefresh);
+      window.removeEventListener("focus", handleExternalRefresh);
     };
-  }, [fetchAndMerge]);
+  }, [fetchAndMerge, handleExternalRefresh]);
 
   const handleDelete = async (documentId: string) => {
     if (!window.confirm("This will permanently delete this upload and all associated OCR/processed data. This action cannot be undone.")) return;
+    const deletedDocument = allDocs.find((doc) => doc.id === documentId);
     setDeletingId(documentId);
     setError(null);
     try {
       await deleteDocument(documentId);
-      await fetchAndMerge();
+      setAllDocs((documents) => documents.filter((doc) => doc.id !== documentId));
+      await fetchAndMerge(false);
     } catch (err) {
+      if (deletedDocument) {
+        setAllDocs((documents) =>
+          documents.some((doc) => doc.id === documentId)
+            ? documents
+            : [...documents, deletedDocument],
+        );
+      }
       setError(err instanceof Error ? err.message : "Failed to delete document");
     } finally {
       setDeletingId(null);
